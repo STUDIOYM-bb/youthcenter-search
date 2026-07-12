@@ -1,0 +1,13 @@
+{
+  "_fixture": "parser-contract fixture based on live response shape",
+  "resultCode": 200,
+  "resultMessage": "성공적으로 데이터를 가지고 왔습니다.",
+  "result": {
+    "pagging": {
+      "totCount": 0,
+      "pageNum": 1,
+      "pageSize": 10
+    },
+    "youthPolicyList": []
+  }
+}

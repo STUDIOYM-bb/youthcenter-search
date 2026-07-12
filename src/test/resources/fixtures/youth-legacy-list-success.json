@@ -1,0 +1,11 @@
+{
+  "_fixture": "parser-contract fixture",
+  "youthPolicyList": [
+    {
+      "plcyNo": "L001",
+      "plcyNm": "구버전 청년 정책",
+      "plcyExplnCn": "구버전 진단용 응답입니다.",
+      "plcyKywdNm": "진단"
+    }
+  ]
+}

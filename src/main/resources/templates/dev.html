@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Youthcenter Search 관리자</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="page-header">
+    <div>
+        <h1>관리자 개발 화면</h1>
+        <p>온통청년 수집, 임베딩, Qdrant 동기화 상태를 확인합니다.</p>
+    </div>
+    <a class="header-link" href="/">사용자 검색 화면</a>
+</header>
+
+<main class="layout">
+    <section class="card">
+        <h2>관리자 키</h2>
+        <label class="field">
+            <span>X-Admin-Key</span>
+            <input id="adminKeyInput" type="password" autocomplete="off">
+        </label>
+        <div class="button-row">
+            <button id="saveAdminKeyBtn" type="button">저장</button>
+            <button id="refreshAdminStatusBtn" type="button" class="secondary">상태 새로고침</button>
+        </div>
+        <div id="adminAlert" class="alert hidden"></div>
+    </section>
+
+    <section class="card">
+        <h2>시스템 상태</h2>
+        <div id="adminStatus" class="summary-grid"></div>
+    </section>
+
+    <section class="card">
+        <h2>작업 실행</h2>
+        <div class="button-row">
+            <button data-job="probe" type="button">온통청년 연결 진단</button>
+            <button data-job="policy-collection" type="button">온통청년 전체 정책 수집</button>
+            <button data-job="embedding-queue" type="button">전체 정책 임베딩 대기열 등록</button>
+            <button data-job="embedding-process" type="button">전체 PENDING 임베딩 처리</button>
+            <button data-job="embedding-retry-failed" type="button">FAILED 임베딩 재시도</button>
+            <button data-job="full-reindex" type="button">전체 수집 후 전체 재인덱싱</button>
+            <button data-job="qdrant-search" type="button" class="secondary">Qdrant Vector 검색</button>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>진행 상태</h2>
+        <div id="jobStatus" class="summary-grid"></div>
+        <h3>진단 원본</h3>
+        <pre id="adminRaw">결과 없음</pre>
+    </section>
+</main>
+
+<script src="/js/api.js"></script>
+<script src="/js/dev.js"></script>
+</body>
+</html>

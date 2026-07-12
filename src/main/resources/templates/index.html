@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나에게 맞는 청년정책 찾기</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="page-header">
+    <div>
+        <h1>나에게 맞는 청년정책 찾기</h1>
+        <p>온통청년 정책 데이터를 MySQL과 Qdrant에 저장하고 자연어로 검색합니다.</p>
+    </div>
+    <a class="header-link" href="/dev">관리자 개발 화면</a>
+</header>
+
+<main class="layout">
+    <section class="card search-card">
+        <h2>정책 검색</h2>
+        <p class="hint">검색 결과는 정책 정보와 입력 조건의 관련도 기준입니다. 최종 신청 자격은 공식 기관에서 확인해야 합니다.</p>
+        <div id="searchAlert" class="alert hidden"></div>
+        <form id="policySearchForm" class="natural-form">
+            <label class="field">
+                <span>현재 상황을 자연어로 입력하세요.</span>
+                <input name="query" id="policySearchQuery" type="text" minlength="2" maxlength="500" required
+                       placeholder="수원 사는 27살 무직 청년 지원금">
+            </label>
+            <label class="field result-size">
+                <span>결과 수</span>
+                <input name="resultSize" type="number" min="1" max="100" value="20">
+            </label>
+            <button type="submit">검색</button>
+        </form>
+        <div class="chip-row">
+            <button type="button" class="chip">수원 사는 27살 무직 청년 지원금</button>
+            <button type="button" class="chip">경기도 청년 면접수당</button>
+            <button type="button" class="chip">대학생 생활비 지원</button>
+            <button type="button" class="chip">청년 월세 지원</button>
+            <button type="button" class="chip">사회초년생 자산형성 정책</button>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>검색 요약</h2>
+        <div id="searchSummary" class="summary-grid"></div>
+        <details>
+            <summary>검색 과정 보기</summary>
+            <div id="diagnostics" class="summary-grid"></div>
+        </details>
+        <h3>요약 답변</h3>
+        <pre id="answerBox">검색 전입니다.</pre>
+    </section>
+
+    <section class="card">
+        <h2>검색 결과</h2>
+        <div id="searchResults" class="policy-card-grid"></div>
+    </section>
+</main>
+
+<script src="/js/api.js"></script>
+<script src="/js/search.js"></script>
+</body>
+</html>

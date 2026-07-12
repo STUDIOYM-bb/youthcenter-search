@@ -1,0 +1,31 @@
+{
+  "_fixture": "parser-contract fixture based on live response shape",
+  "resultCode": 200,
+  "resultMessage": "성공적으로 데이터를 가지고 왔습니다.",
+  "result": {
+    "pagging": {
+      "totCount": 3,
+      "pageNum": 1,
+      "pageSize": 2
+    },
+    "youthPolicyList": [
+      {
+        "plcyNo": "P001",
+        "plcyNm": "청년 취업 지원",
+        "plcyExplnCn": "청년 취업 준비를 지원합니다.",
+        "plcyKywdNm": "취업,교육",
+        "plcySprtCn": "지원 내용",
+        "sprtTrgtMinAge": "19",
+        "sprtTrgtMaxAge": "34",
+        "sprtTrgtAgeLmtYn": "Y",
+        "extraField": "extra"
+      },
+      {
+        "plcyNo": "P002",
+        "plcyNm": "청년 주거 지원",
+        "plcyExplnCn": "청년 주거비를 지원합니다.",
+        "plcyKywdNm": "주거"
+      }
+    ]
+  }
+}

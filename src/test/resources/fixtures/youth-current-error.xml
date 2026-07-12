@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+    <header>
+        <resultCode>E001</resultCode>
+        <resultMsg>인증키가 올바르지 않습니다.</resultMsg>
+    </header>
+</response>

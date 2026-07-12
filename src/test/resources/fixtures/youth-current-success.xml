@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+    <body>
+        <items>
+            <item>
+                <plcyNo>P001</plcyNo>
+                <plcyNm>청년 취업 지원</plcyNm>
+                <plcyExplnCn>청년 취업 준비를 지원합니다.</plcyExplnCn>
+                <plcyKywdNm>취업,교육</plcyKywdNm>
+            </item>
+            <item>
+                <plcyNo>P002</plcyNo>
+                <plcyNm>청년 주거 지원</plcyNm>
+                <plcyExplnCn>청년 주거비를 지원합니다.</plcyExplnCn>
+                <plcyKywdNm>주거</plcyKywdNm>
+            </item>
+        </items>
+    </body>
+</response>

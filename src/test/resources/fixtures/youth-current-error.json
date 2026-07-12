@@ -1,0 +1,5 @@
+{
+  "_fixture": "parser-contract fixture",
+  "resultCode": "E001",
+  "resultMsg": "인증키가 올바르지 않습니다."
+}

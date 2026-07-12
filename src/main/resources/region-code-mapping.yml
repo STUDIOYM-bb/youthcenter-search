@@ -1,0 +1,49 @@
+regions:
+  - code: KR
+    province: 전국
+    city:
+    level: NATIONWIDE
+  - code: 41
+    province: 경기도
+    city:
+    level: PROVINCE
+  - code: 41110
+    province: 경기도
+    city: 수원시
+    level: CITY
+  - code: 41130
+    province: 경기도
+    city: 성남시
+    level: CITY
+  - code: 41460
+    province: 경기도
+    city: 용인시
+    level: CITY
+  - code: 11
+    province: 서울특별시
+    city:
+    level: PROVINCE
+  - code: 26
+    province: 부산광역시
+    city:
+    level: PROVINCE
+  - code: 28
+    province: 인천광역시
+    city:
+    level: PROVINCE
+  - code: 28237
+    province: 인천광역시
+    city: 부평구
+    level: DISTRICT
+  - code: 29
+    province: 광주광역시
+    city:
+    level: PROVINCE
+  - code: 27
+    province: 대구광역시
+    city:
+    level: PROVINCE
+  - code: 50
+    province: 제주특별자치도
+    city:
+    level: PROVINCE

@@ -1,0 +1,130 @@
+spring:
+  application:
+    name: youthcenter-search
+
+  profiles:
+    default: local
+
+  config:
+    import:
+      - optional:file:./config/application-secret.yml
+
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:youthcenter_search}?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Seoul
+    username: ${MYSQL_USERNAME:youthcenter}
+    password: ${MYSQL_PASSWORD:youthcenter_password}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  thymeleaf:
+    cache: false
+
+  ai:
+    model:
+      chat: ${SPRING_AI_MODEL_CHAT:none}
+      embedding: ${SPRING_AI_MODEL_EMBEDDING:none}
+      image: none
+      audio:
+        transcription: none
+        speech: none
+      moderation: none
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        options:
+          model: ${OPENAI_CHAT_MODEL:gpt-4.1-mini}
+          temperature: 0
+      embedding:
+        options:
+          model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+    vectorstore:
+      qdrant:
+        enabled: ${RAG_ENABLED:false}
+        host: ${QDRANT_HOST:localhost}
+        port: ${QDRANT_GRPC_PORT:6334}
+        api-key: ${QDRANT_API_KEY:}
+        collection-name: ${QDRANT_COLLECTION_NAME:youthcenter_policies}
+        initialize-schema: ${QDRANT_AUTO_CREATE_COLLECTION:true}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+app:
+  admin-api-key: ${ADMIN_API_KEY:}
+
+  youth-center:
+    enabled: ${YOUTH_CENTER_ENABLED:true}
+    base-url: ${YOUTH_CENTER_BASE_URL:https://www.youthcenter.go.kr}
+    path: ${YOUTH_CENTER_PATH:/go/ythip/getPlcy}
+    api-key: ${YOUTH_CENTER_API_KEY:}
+    api-mode: CURRENT
+    current:
+      base-url: ${YOUTH_CENTER_BASE_URL:https://www.youthcenter.go.kr}
+      path: ${YOUTH_CENTER_PATH:/go/ythip/getPlcy}
+      api-key: ${YOUTH_CENTER_API_KEY:}
+    legacy:
+      base-url: ${YOUTH_CENTER_LEGACY_BASE_URL:https://www.youthcenter.go.kr}
+      path: ${YOUTH_CENTER_LEGACY_PATH:/opi/youthPlcyList.do}
+    default-page-number: 1
+    default-page-size: 10
+    maximum-page-size: 100
+    pagination-test-max-pages: 3
+    default-return-type: json
+    connect-timeout: ${POLICY_COLLECTION_CONNECT_TIMEOUT:5s}
+    read-timeout: ${POLICY_COLLECTION_READ_TIMEOUT:20s}
+    follow-redirects: false
+    maximum-redirects: 3
+    request-delay: ${POLICY_COLLECTION_REQUEST_DELAY:300ms}
+    max-retries: ${POLICY_COLLECTION_MAX_RETRIES:3}
+    raw-response:
+      save-enabled: true
+      directory: build/api-responses
+      preview-length: 2000
+    collection:
+      enabled: ${POLICY_COLLECTION_ENABLED:false}
+      cron: ${POLICY_COLLECTION_CRON:0 0 3 * * *}
+      page-size: ${POLICY_COLLECTION_PAGE_SIZE:100}
+      max-pages: ${POLICY_COLLECTION_MAX_PAGES:1000}
+      request-delay: ${POLICY_COLLECTION_REQUEST_DELAY:300ms}
+      detail-request-delay: ${POLICY_DETAIL_REQUEST_DELAY:200ms}
+      max-retries: ${POLICY_COLLECTION_MAX_RETRIES:3}
+      connect-timeout: ${POLICY_COLLECTION_CONNECT_TIMEOUT:5s}
+      read-timeout: ${POLICY_COLLECTION_READ_TIMEOUT:20s}
+      detail-fetch-mode: ${YOUTH_CENTER_DETAIL_FETCH_MODE:MISSING_ONLY}
+
+  rag:
+    enabled: ${RAG_ENABLED:false}
+    collection-name: ${QDRANT_COLLECTION_NAME:youthcenter_policies}
+    chat-model: ${OPENAI_CHAT_MODEL:gpt-4.1-mini}
+    embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+    embedding:
+      batch-size: ${RAG_EMBEDDING_BATCH_SIZE:100}
+      max-batches-per-run: ${RAG_EMBEDDING_MAX_BATCHES_PER_RUN:1000}
+      request-delay: ${RAG_EMBEDDING_REQUEST_DELAY:50ms}
+      max-consecutive-failures: ${RAG_EMBEDDING_MAX_CONSECUTIVE_FAILURES:20}
+    search:
+      top-k: ${RAG_SEARCH_TOP_K:50}
+      retry-top-k: ${RAG_SEARCH_RETRY_TOP_K:150}
+      result-size: ${RAG_SEARCH_RESULT_SIZE:20}
+      minimum-similarity: ${RAG_MINIMUM_SIMILARITY:0.55}
+      include-unknown-region: ${RAG_INCLUDE_UNKNOWN_REGION:false}
+      mysql-fallback-enabled: ${RAG_MYSQL_FALLBACK_ENABLED:true}
+
+logging:
+  level:
+    root: INFO
+    com.themoa.youthcentersearch: INFO
