@@ -3,7 +3,9 @@
 
     document.addEventListener("DOMContentLoaded", () => {
         const saved = sessionStorage.getItem("adminKey");
-        if (saved) document.getElementById("adminKeyInput").value = saved;
+        if (saved) {
+            document.getElementById("adminKeyInput").value = saved;
+        }
         document.getElementById("saveAdminKeyBtn").addEventListener("click", () => {
             sessionStorage.setItem("adminKey", document.getElementById("adminKeyInput").value);
             showAlert("관리자 키를 sessionStorage에 저장했습니다.", false);
@@ -44,11 +46,17 @@
         try {
             hideAlert();
             let endpoint = `/api/admin/jobs/${job}`;
-            if (job === "probe") endpoint = "/api/admin/youth-center/probe";
-            if (job === "qdrant-search") endpoint = "/api/admin/qdrant/search";
+            if (job === "probe") {
+                endpoint = "/api/admin/youth-center/probe";
+            }
+            if (job === "qdrant-search") {
+                endpoint = "/api/admin/qdrant/search";
+            }
             const data = await api.post(endpoint, {});
             document.getElementById("adminRaw").textContent = JSON.stringify(data, null, 2);
-            if (data.jobId) renderJob(data);
+            if (data.jobId) {
+                renderJob(data);
+            }
             await loadStatus();
         } catch (error) {
             showAlert(error.message, true);
@@ -71,7 +79,9 @@
     }
 
     function renderDefinition(target, values) {
-        target.innerHTML = Object.entries(values).map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${safe(value)}</dd></div>`).join("");
+        target.innerHTML = Object.entries(values)
+                .map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${safe(value)}</dd></div>`)
+                .join("");
     }
 
     function showAlert(message, danger) {
@@ -85,11 +95,16 @@
     }
 
     function safe(value) {
-        if (value === null || value === undefined || value === "") return "정보 없음";
+        if (value === null || value === undefined || value === "") {
+            return "정보 없음";
+        }
         return escapeHtml(String(value));
     }
 
     function escapeHtml(value) {
-        return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return String(value)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
     }
 })();

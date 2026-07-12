@@ -30,15 +30,15 @@
                 throw new Error(payload && payload.message ? payload.message : text || `HTTP ${response.status}`);
             }
             if (!payload || typeof payload.success === "undefined") {
-                throw new Error("?쒕쾭 ?묐떟 ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎.");
+                throw new Error("서버 응답 형식이 올바르지 않습니다.");
             }
             if (!payload.success) {
-                throw new Error(payload.message || "?붿껌???ㅽ뙣?덉뒿?덈떎.");
+                throw new Error(payload.message || "요청 처리에 실패했습니다.");
             }
             return payload.data;
         } catch (error) {
             if (error.name === "AbortError") {
-                throw new Error("?붿껌 ?쒓컙??珥덇낵?섏뿀?듬땲??");
+                throw new Error("요청 시간이 초과되었습니다.");
             }
             throw error;
         } finally {

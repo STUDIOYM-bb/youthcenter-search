@@ -90,16 +90,22 @@
     }
 
     function renderDefinition(target, values) {
-        target.innerHTML = Object.entries(values).map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${safe(value)}</dd></div>`).join("");
+        target.innerHTML = Object.entries(values)
+                .map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${safe(value)}</dd></div>`)
+                .join("");
     }
 
     function ageText(item) {
-        if (!item.minAge && !item.maxAge) return "확인 필요";
+        if (!item.minAge && !item.maxAge) {
+            return "확인 필요";
+        }
         return `${item.minAge || "정보 없음"}~${item.maxAge || "정보 없음"}`;
     }
 
     function periodText(item) {
-        if (!item.startDate && !item.dueDate) return "확인 필요";
+        if (!item.startDate && !item.dueDate) {
+            return "확인 필요";
+        }
         return `${item.startDate || ""} ~ ${item.dueDate || ""}`;
     }
 
@@ -119,7 +125,9 @@
     }
 
     function safe(value) {
-        if (value === null || value === undefined || value === "") return "정보 없음";
+        if (value === null || value === undefined || value === "") {
+            return "정보 없음";
+        }
         return escapeHtml(String(value));
     }
 
@@ -128,6 +136,9 @@
     }
 
     function escapeHtml(value) {
-        return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return String(value)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
     }
 })();
