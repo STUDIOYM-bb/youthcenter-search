@@ -27,3 +27,8 @@
 컬렉션 fetch join과 Pageable을 같이 쓰지 않고, ID 조회 후 상세 로드를 사용한다.
 
 문서 ID는 정책 ID 기반 결정적 UUID이므로 재임베딩 시 Qdrant point가 중복 생성되지 않는다.
+# 임베딩 진행률과 배치 처리
+
+PENDING 임베딩 처리는 시작 시 initial pending 수를 `totalCount`로 고정한다. 진행률은 처리 건수 / initial pending 수로 계산하며 완료 전에는 100%를 표시하지 않는다.
+
+기본 처리는 배치 단위로 `vectorStore.add(documents)`를 호출한다. 배치 실패 시 해당 배치를 개별 문서 처리로 전환하고 실패 정책만 `FAILED`로 표시한다. Qdrant Point ID는 기존 deterministic ID를 유지한다.

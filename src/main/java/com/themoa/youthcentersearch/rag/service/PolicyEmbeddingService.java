@@ -6,12 +6,15 @@ import com.themoa.youthcentersearch.policy.repository.PolicyEmbeddingSyncReposit
 import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
 import com.themoa.youthcentersearch.rag.config.RagProperties;
 import com.themoa.youthcentersearch.common.config.LocalSecretConfigurationStatus;
+import com.themoa.youthcentersearch.admin.service.JobProgressUpdate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.document.Document;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -42,14 +45,20 @@ public class PolicyEmbeddingService {
     }
 
     public EmbeddingQueueResult queueAll(boolean force) {
+        return queueAll(force, null);
+    }
+
+    public EmbeddingQueueResult queueAll(boolean force, Consumer<JobProgressUpdate> progressConsumer) {
         return transactionTemplate.execute(status -> {
             long activeCount = policyRepository.countByActiveTrue();
             int newlyQueued = 0;
             int requeued = 0;
             int unchanged = 0;
             int page = 0;
+            int batchSize = 500;
+            int totalBatches = (int) Math.ceil((double) activeCount / batchSize);
             while (true) {
-                List<Integer> ids = policyRepository.findActivePolicyIds(PageRequest.of(page++, 500));
+                List<Integer> ids = policyRepository.findActivePolicyIds(PageRequest.of(page++, batchSize));
                 if (ids.isEmpty()) {
                     break;
                 }
@@ -67,9 +76,23 @@ public class PolicyEmbeddingService {
                         unchanged++;
                     }
                 }
+                if (progressConsumer != null) {
+                    long processed = Math.min(activeCount, (long) page * batchSize);
+                    progressConsumer.accept(new JobProgressUpdate("QUEUEING", "임베딩 대기열 등록 중", activeCount,
+                            processed, newlyQueued + requeued, 0, 0, 0, page, totalBatches, null, 0, 0,
+                            "임베딩 대기열을 등록하고 있습니다."));
+                }
             }
             return new EmbeddingQueueResult(activeCount, newlyQueued, requeued, unchanged, syncRepository.countBySyncStatus("PENDING"));
         });
+    }
+
+    public long pendingCount() {
+        return syncRepository.countBySyncStatus("PENDING");
+    }
+
+    public int batchSize() {
+        return properties.getEmbedding().getBatchSize();
     }
 
     public EmbeddingProcessResult processPending() {
@@ -103,19 +126,41 @@ public class PolicyEmbeddingService {
             if (ids.isEmpty()) {
                 break;
             }
+            List<PolicyDocumentBuilder.BuiltPolicyDocument> builtDocuments = new ArrayList<>();
             for (Integer policyId : ids) {
-                processed++;
-                PolicyDocumentBuilder.BuiltPolicyDocument built = null;
                 try {
-                    built = markProcessingAndBuild(policyId);
-                    vectorStore.add(List.of(built.document()));
-                    markSynced(policyId);
-                    success++;
+                    builtDocuments.add(markProcessingAndBuild(policyId));
                 } catch (RuntimeException ex) {
                     markFailed(policyId, ex);
                     failed++;
+                    processed++;
+                    notifyProgress(progressConsumer, processed, success, failed);
                 }
-                notifyProgress(progressConsumer, processed, success, failed);
+            }
+            try {
+                if (builtDocuments.isEmpty()) {
+                    continue;
+                }
+                vectorStore.add(builtDocuments.stream().map(PolicyDocumentBuilder.BuiltPolicyDocument::document).toList());
+                for (PolicyDocumentBuilder.BuiltPolicyDocument ignored : builtDocuments) {
+                    markSyncedByDocument(ignored.document());
+                    success++;
+                    processed++;
+                    notifyProgress(progressConsumer, processed, success, failed);
+                }
+            } catch (RuntimeException batchFailure) {
+                for (PolicyDocumentBuilder.BuiltPolicyDocument built : builtDocuments) {
+                    try {
+                        vectorStore.add(List.of(built.document()));
+                        markSyncedByDocument(built.document());
+                        success++;
+                    } catch (RuntimeException ex) {
+                        markFailedByDocument(built.document(), ex);
+                        failed++;
+                    }
+                    processed++;
+                    notifyProgress(progressConsumer, processed, success, failed);
+                }
             }
             sleepQuietly(properties.getEmbedding().getRequestDelay().toMillis());
         }
@@ -153,8 +198,16 @@ public class PolicyEmbeddingService {
         transactionTemplate.executeWithoutResult(status -> syncRepository.findByPolicyId(policyId).orElseThrow().synced());
     }
 
+    private void markSyncedByDocument(Document document) {
+        markSynced(Integer.valueOf(String.valueOf(document.getMetadata().get("policyId"))));
+    }
+
     private void markFailed(Integer policyId, RuntimeException ex) {
         transactionTemplate.executeWithoutResult(status -> syncRepository.findByPolicyId(policyId).orElseThrow().failed(ex.getMessage()));
+    }
+
+    private void markFailedByDocument(Document document, RuntimeException ex) {
+        markFailed(Integer.valueOf(String.valueOf(document.getMetadata().get("policyId"))), ex);
     }
 
     private void notifyProgress(Consumer<EmbeddingProgress> progressConsumer, int processed, int success, int failed) {

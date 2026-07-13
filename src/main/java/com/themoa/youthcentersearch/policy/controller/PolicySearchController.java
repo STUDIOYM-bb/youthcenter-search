@@ -3,8 +3,9 @@ package com.themoa.youthcentersearch.policy.controller;
 import com.themoa.youthcentersearch.common.response.ApiResponse;
 import com.themoa.youthcentersearch.policy.domain.Policy;
 import com.themoa.youthcentersearch.policy.domain.PolicyRawData;
-import com.themoa.youthcentersearch.policy.repository.PolicyRawDataRepository;
+import com.themoa.youthcentersearch.policy.domain.PolicySourceSnapshot;
 import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
+import com.themoa.youthcentersearch.policy.repository.PolicySourceSnapshotRepository;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchRequest;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchResponse;
 import com.themoa.youthcentersearch.rag.service.PolicyRagSearchService;
@@ -23,13 +24,13 @@ import java.util.Map;
 public class PolicySearchController {
     private final PolicyRagSearchService searchService;
     private final PolicyRepository policyRepository;
-    private final PolicyRawDataRepository rawDataRepository;
+    private final PolicySourceSnapshotRepository snapshotRepository;
 
     public PolicySearchController(PolicyRagSearchService searchService, PolicyRepository policyRepository,
-                                  PolicyRawDataRepository rawDataRepository) {
+                                  PolicySourceSnapshotRepository snapshotRepository) {
         this.searchService = searchService;
         this.policyRepository = policyRepository;
-        this.rawDataRepository = rawDataRepository;
+        this.snapshotRepository = snapshotRepository;
     }
 
     @PostMapping("/search")
@@ -58,13 +59,21 @@ public class PolicySearchController {
     @GetMapping("/{policyId}/raw")
     public ApiResponse<Map<String, Object>> raw(@PathVariable Integer policyId) {
         Policy policy = policyRepository.findById(policyId).orElseThrow(() -> new IllegalArgumentException("정책을 찾을 수 없습니다."));
-        PolicyRawData raw = rawDataRepository.findTopBySourceAndSourcePolicyIdOrderByCollectedAtDesc(policy.getSourceType(), policy.getSourcePolicyId())
-                .orElseThrow(() -> new IllegalArgumentException("원본 응답을 찾을 수 없습니다."));
-        return ApiResponse.ok(Map.of(
+        PolicySourceSnapshot snapshot = snapshotRepository.findByPolicyId(policyId)
+                .orElseThrow(() -> new IllegalArgumentException("정책별 원본 Snapshot을 찾을 수 없습니다. 전체 정책 수집을 다시 실행하세요."));
+        PolicyRawData raw = snapshot.getRawData();
+        Map<String, Object> pageRawData = raw == null ? Map.of() : Map.of(
+                "rawDataId", raw.getId(),
                 "requestUrl", raw.getRequestUrl(),
                 "responseFormat", raw.getResponseFormat(),
-                "collectedAt", raw.getCollectedAt().toString(),
-                "responseBody", raw.getResponseBody()
+                "collectedAt", raw.getCollectedAt().toString()
+        );
+        return ApiResponse.ok(Map.of(
+                "policyId", policy.getId(),
+                "sourcePolicyId", snapshot.getSourcePolicyId(),
+                "source", snapshot.getSource(),
+                "rawPolicy", snapshot.getRawPolicyJson(),
+                "pageRawData", pageRawData
         ));
     }
 }

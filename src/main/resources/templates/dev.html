@@ -40,6 +40,7 @@
         <div class="button-row">
             <button data-job="probe" type="button">온통청년 연결 진단</button>
             <button data-job="policy-collection" type="button">온통청년 전체 정책 수집</button>
+            <button data-job="region-catalog-sync" type="button">전국 행정지역 동기화</button>
             <button data-job="embedding-queue" type="button">전체 정책 임베딩 대기열 등록</button>
             <button data-job="policy-region-rebuild" type="button">전체 정책 지역 다시 계산</button>
             <button data-job="embedding-process" type="button">전체 PENDING 임베딩 처리</button>
@@ -50,7 +51,20 @@
     </section>
 
     <section class="card">
+        <h2>지역 검색 진단</h2>
+        <label class="field">
+            <span>지역 입력</span>
+            <input id="regionResolveInput" type="text" placeholder="칠곡, 경북 칠곡, 경기도 광주, 광주">
+        </label>
+        <div class="button-row">
+            <button id="resolveRegionBtn" type="button">지역 해석</button>
+        </div>
+        <div id="regionResolveResult" class="summary-grid"></div>
+    </section>
+
+    <section class="card">
         <h2>진행 상태</h2>
+        <div id="jobProgress" class="progress-panel"></div>
         <div id="jobStatus" class="summary-grid"></div>
         <h3>진단 원본</h3>
         <pre id="adminRaw">결과 없음</pre>

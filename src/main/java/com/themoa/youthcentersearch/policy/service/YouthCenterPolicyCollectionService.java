@@ -1,6 +1,7 @@
 package com.themoa.youthcentersearch.policy.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.themoa.youthcentersearch.admin.service.JobProgressUpdate;
 import com.themoa.youthcentersearch.policy.domain.PolicyCollectionError;
 import com.themoa.youthcentersearch.policy.domain.PolicyCollectionRun;
 import com.themoa.youthcentersearch.policy.domain.PolicyRawData;
@@ -23,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 @Service
 public class YouthCenterPolicyCollectionService {
@@ -53,6 +55,10 @@ public class YouthCenterPolicyCollectionService {
     }
 
     public PolicyCollectionResult collectAll() {
+        return collectAll(null);
+    }
+
+    public PolicyCollectionResult collectAll(Consumer<JobProgressUpdate> progressConsumer) {
         PolicyCollectionRun run = runRepository.save(new PolicyCollectionRun(PolicySource.YOUTH_CENTER.name(), "MANUAL"));
         int pageSize = properties.getCollection().getPageSize();
         int maxPages = properties.getCollection().getMaxPages();
@@ -63,7 +69,9 @@ public class YouthCenterPolicyCollectionService {
         Set<String> firstPolicyNumbers = new HashSet<>();
 
         try {
+            notify(progressConsumer, new JobProgressUpdate("CONNECTING", "온통청년 연결 중", 0, 0, 0, 0, 0, 0, 0, 0, null, apiRequests, 0, "온통청년 API 연결 중"));
             for (int page = 1; page <= maxPages; page++) {
+                notify(progressConsumer, new JobProgressUpdate("FETCHING_PAGE", "페이지 요청 중", totalCount, run.getReceivedCount(), run.getInsertedCount() + run.getUpdatedCount(), run.getFailedCount(), page, totalCount <= 0 ? 0 : (int) Math.ceil((double) totalCount / pageSize), 0, 0, null, apiRequests, 0, page + "페이지 요청 중"));
                 PageFetchResult pageResult = fetchPageWithRetries(page, pageSize);
                 apiRequests += pageResult.apiRequestCount();
                 PolicyRawData rawData = pageResult.rawData();
@@ -74,13 +82,15 @@ public class YouthCenterPolicyCollectionService {
                 if (page == 1 && parsed.totalCount() != null) {
                     totalCount = parsed.totalCount();
                 }
+                int totalPages = totalCount <= 0 ? 0 : (int) Math.ceil((double) totalCount / pageSize);
                 if (isRepeatedPage(response.body(), parsed, pageHashes, firstPolicyNumbers)) {
                     run.complete("STOPPED_REPEATED_PAGE");
                     break;
                 }
                 for (YouthPolicyItem item : parsed.policies()) {
                     try {
-                        PolicyUpsertResult result = persistenceService.upsert(item);
+                        notify(progressConsumer, new JobProgressUpdate("PERSISTING_PAGE", "정책 저장 중", totalCount, run.getReceivedCount(), run.getInsertedCount() + run.getUpdatedCount(), run.getFailedCount(), page, totalPages, 0, 0, item.policyName(), apiRequests, 0, "정책을 저장하고 있습니다."));
+                        PolicyUpsertResult result = persistenceService.upsert(item, rawData);
                         if (result.inserted()) {
                             run.inserted();
                         } else {
@@ -93,6 +103,7 @@ public class YouthCenterPolicyCollectionService {
                     }
                 }
                 int lastPage = totalCount <= 0 ? page : (int) Math.ceil((double) totalCount / pageSize);
+                notify(progressConsumer, new JobProgressUpdate("PERSISTING_PAGE", "정책 저장 중", totalCount, run.getReceivedCount(), run.getInsertedCount() + run.getUpdatedCount(), run.getFailedCount(), page, lastPage, 0, 0, null, apiRequests, 0, page + "페이지 저장 완료"));
                 if (parsed.policies().isEmpty() || page >= lastPage) {
                     run.complete("COMPLETED");
                     break;
@@ -108,6 +119,12 @@ public class YouthCenterPolicyCollectionService {
         runRepository.save(run);
         return new PolicyCollectionResult(run.getId(), totalCount, requestedPages, apiRequests, run.getReceivedCount(),
                 run.getInsertedCount(), run.getUpdatedCount(), run.getFailedCount(), run.getStatus(), null);
+    }
+
+    private void notify(Consumer<JobProgressUpdate> consumer, JobProgressUpdate update) {
+        if (consumer != null) {
+            consumer.accept(update);
+        }
     }
 
     private PageFetchResult fetchPageWithRetries(int page, int pageSize) throws Exception {

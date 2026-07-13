@@ -358,3 +358,21 @@ git ls-files .env
 - [Region Resolution](docs/REGION_RESOLUTION.md)
 - [Local Setup](docs/LOCAL_SETUP.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
+# SGIS 행정지역 동기화
+
+지역 카탈로그는 `region_code` 테이블을 기준으로 동작하며, 전국 시·도/시·군·구는 SGIS 공식 단계별 주소 API로 동기화할 수 있다. 사용자 검색 시점에는 SGIS API를 호출하지 않는다.
+
+`config/application-secret.yml`:
+
+```yaml
+SGIS_CONSUMER_KEY: ""
+SGIS_CONSUMER_SECRET: ""
+SGIS_REGION_SYNC_ENABLED: true
+SGIS_REGION_SYNC_ON_STARTUP: false
+```
+
+관리자 화면 `/dev`에서 `전국 행정지역 동기화`를 실행한 뒤, 기존 정책에 적용하려면 `전체 정책 지역 다시 계산`과 `전체 PENDING 임베딩 처리`를 순서대로 실행한다.
+
+짧은 지역명은 DB 카탈로그에서 동적으로 만든다. 예를 들어 `칠곡`은 `경상북도 칠곡군`으로 확정되고, `광주`처럼 복수 후보가 있으면 `AMBIGUOUS`로 남긴다.
+
+자세한 내용은 [REGION_CATALOG_SYNC.md](docs/REGION_CATALOG_SYNC.md)를 참고한다.

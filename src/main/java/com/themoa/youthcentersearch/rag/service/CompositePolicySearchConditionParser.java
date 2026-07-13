@@ -41,7 +41,8 @@ public class CompositePolicySearchConditionParser implements PolicySearchConditi
                                     "청년 정책" does not mean age=19.
                                     Set missing conditions to null, never to 0, false, or an empty string.
                                     Do not recommend or invent policies.
-                                    Fields: province, city, district, age, employmentStatus, studentStatus,
+                                    Include rawRegionText when the user wrote a region phrase, for example "칠곡" or "경북 칠곡".
+                                    Fields: rawRegionText, province, city, district, age, employmentStatus, studentStatus,
                                     careerStage, category, supportTypes, keywords, resultSize.
                                     employmentStatus examples: UNEMPLOYED, EMPLOYED.
                                     supportTypes examples: CASH, ALLOWANCE, SUBSIDY, HOUSING, EDUCATION.

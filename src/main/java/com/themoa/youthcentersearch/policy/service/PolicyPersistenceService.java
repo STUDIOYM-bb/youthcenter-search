@@ -3,6 +3,7 @@ package com.themoa.youthcentersearch.policy.service;
 import com.themoa.youthcentersearch.policy.domain.Policy;
 import com.themoa.youthcentersearch.policy.domain.PolicyCondition;
 import com.themoa.youthcentersearch.policy.domain.PolicySource;
+import com.themoa.youthcentersearch.policy.domain.PolicyRawData;
 import com.themoa.youthcentersearch.policy.region.PolicyRegionResolver;
 import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
 import com.themoa.youthcentersearch.youthcenter.dto.parsed.YouthPolicyItem;
@@ -19,19 +20,27 @@ public class PolicyPersistenceService {
     private final PolicyFieldNormalizer normalizer;
     private final PolicyRegionResolver regionResolver;
     private final PolicyRegionSyncService regionSyncService;
+    private final PolicySourceSnapshotService snapshotService;
 
     public PolicyPersistenceService(PolicyRepository policyRepository,
                                     PolicyFieldNormalizer normalizer,
                                     PolicyRegionResolver regionResolver,
-                                    PolicyRegionSyncService regionSyncService) {
+                                    PolicyRegionSyncService regionSyncService,
+                                    PolicySourceSnapshotService snapshotService) {
         this.policyRepository = policyRepository;
         this.normalizer = normalizer;
         this.regionResolver = regionResolver;
         this.regionSyncService = regionSyncService;
+        this.snapshotService = snapshotService;
     }
 
     @Transactional
     public PolicyUpsertResult upsert(YouthPolicyItem item) {
+        return upsert(item, null);
+    }
+
+    @Transactional
+    public PolicyUpsertResult upsert(YouthPolicyItem item, PolicyRawData rawData) {
         Map<String, Object> fields = item.fields();
         String sourcePolicyId = firstText(item.policyNumber(), normalizer.text(fields, "plcyNo"));
         if (!StringUtils.hasText(sourcePolicyId)) {
@@ -89,6 +98,7 @@ public class PolicyPersistenceService {
 
         Policy saved = policyRepository.save(policy);
         regionSyncService.syncRegions(saved, regionResolver.resolve(fields));
+        snapshotService.upsert(saved.getId(), sourcePolicyId, rawData, fields);
         return new PolicyUpsertResult(saved.getId(), inserted);
     }
 

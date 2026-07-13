@@ -1,5 +1,6 @@
 package com.themoa.youthcentersearch.rag.service;
 
+import com.themoa.youthcentersearch.policy.region.UserRegionTextResolver;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchCondition;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +12,11 @@ import java.util.regex.Pattern;
 @Component
 public class RuleBasedPolicySearchConditionParser {
     private static final Pattern AGE = Pattern.compile("(\\d{1,2})\\s*(살|세)");
+    private final UserRegionTextResolver userRegionTextResolver;
+
+    public RuleBasedPolicySearchConditionParser(UserRegionTextResolver userRegionTextResolver) {
+        this.userRegionTextResolver = userRegionTextResolver;
+    }
 
     public PolicySearchCondition parseCondition(String query, Integer resultSize) {
         String text = query == null ? "" : query;
@@ -18,15 +24,16 @@ public class RuleBasedPolicySearchConditionParser {
         Set<String> supportTypes = new LinkedHashSet<>();
         String province = null;
         String city = null;
-        if (text.contains("수원")) {
-            province = "경기도";
-            city = "수원시";
-        } else if (text.contains("제주도") || text.contains("제주")) {
-            province = "제주특별자치도";
-        } else if (text.contains("경기도") || text.contains("경기")) {
-            province = "경기도";
-        } else if (text.contains("서울")) {
-            province = "서울특별시";
+        String rawRegionText = null;
+        String regionResolutionStatus = null;
+        var region = userRegionTextResolver.resolve(text);
+        if (region.resolved()) {
+            province = region.province();
+            city = region.city();
+            rawRegionText = region.regionName();
+            regionResolutionStatus = region.status().name();
+        } else if (region.status().name().equals("AMBIGUOUS")) {
+            regionResolutionStatus = region.status().name();
         }
         Integer age = null;
         Matcher matcher = AGE.matcher(text);
@@ -66,7 +73,9 @@ public class RuleBasedPolicySearchConditionParser {
         if (keywords.isEmpty()) {
             keywords.add("청년");
         }
-        return new PolicySearchCondition(province, city, null, age, employment, student, null, category, supportTypes, keywords, resultSize);
+        return new PolicySearchCondition(province, city, null, age, employment, student, null, category,
+                supportTypes, keywords, Set.of(), rawRegionText, regionResolutionStatus,
+                false, false, false, false, false, false, null, resultSize);
     }
 
     private void add(String text, Set<String> target, String trigger, String... values) {

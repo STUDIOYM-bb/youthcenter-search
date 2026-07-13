@@ -8,6 +8,8 @@ import com.themoa.youthcentersearch.admin.service.AdminStatusService;
 import com.themoa.youthcentersearch.common.config.LocalSecretConfigurationStatus;
 import com.themoa.youthcentersearch.common.exception.YouthCenterApiException;
 import com.themoa.youthcentersearch.common.response.ApiResponse;
+import com.themoa.youthcentersearch.policy.region.UserRegionResolution;
+import com.themoa.youthcentersearch.policy.region.UserRegionTextResolver;
 import com.themoa.youthcentersearch.youthcenter.dto.response.YouthCenterProbeResponse;
 import com.themoa.youthcentersearch.youthcenter.service.YouthCenterDiagnosticService;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -26,18 +29,21 @@ public class AdminController {
     private final AdminJobService jobService;
     private final YouthCenterDiagnosticService diagnosticService;
     private final AdminRegionDiagnosticsService regionDiagnosticsService;
+    private final UserRegionTextResolver userRegionTextResolver;
     private final LocalSecretConfigurationStatus configurationStatus;
     private final String adminApiKey;
 
     public AdminController(AdminStatusService statusService, AdminJobService jobService,
                            YouthCenterDiagnosticService diagnosticService,
                            AdminRegionDiagnosticsService regionDiagnosticsService,
+                           UserRegionTextResolver userRegionTextResolver,
                            LocalSecretConfigurationStatus configurationStatus,
                            @Value("${app.admin-api-key:}") String adminApiKey) {
         this.statusService = statusService;
         this.jobService = jobService;
         this.diagnosticService = diagnosticService;
         this.regionDiagnosticsService = regionDiagnosticsService;
+        this.userRegionTextResolver = userRegionTextResolver;
         this.configurationStatus = configurationStatus;
         this.adminApiKey = adminApiKey;
     }
@@ -84,6 +90,12 @@ public class AdminController {
         return ApiResponse.ok(jobService.start("POLICY_REGION_REBUILD"));
     }
 
+    @PostMapping("/jobs/region-catalog-sync")
+    public ApiResponse<AdminJobStatus> syncRegionCatalog(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
+        requireAdmin(key);
+        return ApiResponse.ok(jobService.start("REGION_CATALOG_SYNC"));
+    }
+
     @PostMapping("/jobs/full-reindex")
     public ApiResponse<AdminJobStatus> fullReindex(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
         requireAdmin(key);
@@ -119,6 +131,13 @@ public class AdminController {
             @RequestHeader(value = "X-Admin-Key", required = false) String key) {
         requireAdmin(key);
         return ApiResponse.ok(regionDiagnosticsService.anomalies());
+    }
+
+    @GetMapping("/regions/resolve")
+    public ApiResponse<UserRegionResolution> resolveRegion(@RequestHeader(value = "X-Admin-Key", required = false) String key,
+                                                           @RequestParam("q") String query) {
+        requireAdmin(key);
+        return ApiResponse.ok(userRegionTextResolver.resolve(query));
     }
 
     private void requireAdmin(String key) {

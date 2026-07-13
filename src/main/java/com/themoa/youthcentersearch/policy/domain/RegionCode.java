@@ -48,6 +48,10 @@ public class RegionCode {
         return id;
     }
 
+    public RegionCode getParent() {
+        return parent;
+    }
+
     public String getRegionCode() {
         return regionCode;
     }
@@ -62,6 +66,18 @@ public class RegionCode {
 
     public String getRegionLevel() {
         return regionLevel;
+    }
+
+    public boolean update(RegionCode parent, String province, String city, String regionLevel) {
+        boolean changed = this.parent != parent
+                || !java.util.Objects.equals(this.province, province)
+                || !java.util.Objects.equals(this.city, city)
+                || !java.util.Objects.equals(this.regionLevel, regionLevel);
+        this.parent = parent;
+        this.province = province;
+        this.city = city;
+        this.regionLevel = regionLevel;
+        return changed;
     }
 
     public String displayName() {

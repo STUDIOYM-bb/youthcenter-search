@@ -54,10 +54,15 @@ public class RegionCatalog {
         }
         List<RegionCode> loaded = repository.findAll().stream()
                 .filter(region -> !"KR".equals(region.getRegionCode()))
+                .filter(this::searchSupportedLevel)
                 .sorted(Comparator.comparingInt((RegionCode region) -> region.displayName().length()).reversed())
                 .toList();
         specificRegionsByLongestName = loaded;
         return loaded;
+    }
+
+    public void refreshCache() {
+        specificRegionsByLongestName = null;
     }
 
     public Set<RegionCode> findInText(String text) {
@@ -93,8 +98,25 @@ public class RegionCatalog {
         String normalizedProvince = aliases.province(province);
         String normalizedCity = normalizer.normalizeCity(city);
         return repository.findByProvinceAndCity(normalizedProvince, normalizedCity).stream()
-                .filter(region -> "CITY".equals(region.getRegionLevel()) || "DISTRICT".equals(region.getRegionLevel()))
+                .filter(this::searchSupportedLevel)
                 .findFirst();
+    }
+
+    private boolean searchSupportedLevel(RegionCode region) {
+        if ("PROVINCE".equals(region.getRegionLevel()) || "CITY".equals(region.getRegionLevel())) {
+            return true;
+        }
+        return "DISTRICT".equals(region.getRegionLevel()) && !region.getProvince().endsWith("도");
+    }
+
+    public Optional<RegionCode> findProvinceOrCity(String province, String city) {
+        if (StringUtils.hasText(city)) {
+            Optional<RegionCode> resolved = findCity(province, city);
+            if (resolved.isPresent()) {
+                return resolved;
+            }
+        }
+        return findProvince(province);
     }
 
     private boolean matchesRegion(String compactText, RegionCode region) {

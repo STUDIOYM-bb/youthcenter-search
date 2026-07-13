@@ -1,31 +1,33 @@
 package com.themoa.youthcentersearch.rag.service;
 
 import com.themoa.youthcentersearch.policy.domain.RegionCode;
+import com.themoa.youthcentersearch.policy.region.FakeRegionData;
 import com.themoa.youthcentersearch.policy.region.RegionAliasCatalog;
 import com.themoa.youthcentersearch.policy.region.RegionCatalog;
 import com.themoa.youthcentersearch.policy.region.RegionNormalizer;
+import com.themoa.youthcentersearch.policy.region.UserRegionTextResolver;
+import com.themoa.youthcentersearch.policy.repository.RegionCodeRepository;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchCondition;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchMode;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class PolicySearchConditionValidatorTest {
-    private final RegionCatalog regionCatalog = mock(RegionCatalog.class);
-    private final RegionNormalizer regionNormalizer = new RegionNormalizer(new RegionAliasCatalog());
-    private final PolicyKeywordNormalizer keywordNormalizer = new PolicyKeywordNormalizer();
+    private final UserRegionTextResolver userRegionTextResolver = resolver();
     private final PolicySearchConditionValidator validator = new PolicySearchConditionValidator(
-            new ExplicitConditionDetector(regionCatalog, regionNormalizer),
-            new PolicyKeywordExtractor(new PolicyKeywordSynonymCatalog(), keywordNormalizer));
+            new ExplicitConditionDetector(userRegionTextResolver),
+            new PolicyKeywordExtractor(new PolicyKeywordSynonymCatalog(), new PolicyKeywordNormalizer()),
+            userRegionTextResolver);
 
     @Test
     void keywordQueryDoesNotCreateHardConditions() {
-        noRegionInQuery();
         var parsed = new PolicySearchCondition(null, null, null, 19, "UNEMPLOYED", null,
                 null, "일자리", Set.of(), Set.of("청년", "면접", "수당"), 20);
 
@@ -43,7 +45,6 @@ class PolicySearchConditionValidatorTest {
 
     @Test
     void regionAndKeywordQueryIsHybrid() {
-        regionInQuery();
         var parsed = new PolicySearchCondition("경기도", null, null, null, null, null,
                 null, "일자리", Set.of(), Set.of("청년", "면접", "수당"), 20);
 
@@ -57,7 +58,6 @@ class PolicySearchConditionValidatorTest {
 
     @Test
     void interviewAllowanceDoesNotExpandToGenericGrantOnlyBecauseItContainsAllowance() {
-        noRegionInQuery();
         var parsed = new PolicySearchCondition(null, null, null, null, null, null,
                 null, null, Set.of(), Set.of(), 10);
 
@@ -69,10 +69,8 @@ class PolicySearchConditionValidatorTest {
         assertThat(condition.expandedKeywords()).doesNotContain("지원금", "보조금", "장려금");
     }
 
-
     @Test
     void situationQueryKeepsExplicitConditions() {
-        shortCityRegionInQuery();
         var parsed = new PolicySearchCondition("경기도", "수원시", null, 27, "UNEMPLOYED", null,
                 null, "금융", Set.of("CASH"), Set.of("청년", "지원금"), 20);
 
@@ -86,19 +84,35 @@ class PolicySearchConditionValidatorTest {
         assertThat(condition.employmentStatus()).isEqualTo("UNEMPLOYED");
     }
 
-    private void noRegionInQuery() {
-        when(regionCatalog.findInText(anyString())).thenReturn(Set.of());
-        when(regionCatalog.allSpecificRegionsByLongestName()).thenReturn(java.util.List.of());
+    @Test
+    void preservesDynamicCountyRegionFromQuery() {
+        var parsed = new PolicySearchCondition(null, null, null, 30, null, null,
+                null, "일자리", Set.of(), Set.of("청년", "취업"), 10);
+
+        var condition = validator.validate("칠곡에 살고 있는 30살 청년이 받을 수 있는 취업 관련 정책", parsed, 10);
+
+        assertThat(condition.regionExplicit()).isTrue();
+        assertThat(condition.province()).isEqualTo("경상북도");
+        assertThat(condition.city()).isEqualTo("칠곡군");
+        assertThat(condition.age()).isEqualTo(30);
     }
 
-    private void regionInQuery() {
-        when(regionCatalog.findInText(anyString())).thenReturn(Set.of(new RegionCode(null, "41", "경기도", null, "PROVINCE")));
-        when(regionCatalog.allSpecificRegionsByLongestName()).thenReturn(java.util.List.of());
-    }
-
-    private void shortCityRegionInQuery() {
-        when(regionCatalog.findInText(anyString())).thenReturn(Set.of());
-        when(regionCatalog.allSpecificRegionsByLongestName())
-                .thenReturn(java.util.List.of(new RegionCode(null, "41110", "경기도", "수원시", "CITY")));
+    private UserRegionTextResolver resolver() {
+        RegionCodeRepository repository = mock(RegionCodeRepository.class);
+        List<RegionCode> regions = FakeRegionData.regions();
+        when(repository.findAll()).thenReturn(regions);
+        for (RegionCode region : regions) {
+            when(repository.findByRegionCode(region.getRegionCode())).thenReturn(Optional.of(region));
+            when(repository.findByProvince(region.getProvince())).thenReturn(regions.stream()
+                    .filter(candidate -> candidate.getProvince().equals(region.getProvince())).toList());
+            if (region.getCity() != null) {
+                when(repository.findByProvinceAndCity(region.getProvince(), region.getCity())).thenReturn(regions.stream()
+                        .filter(candidate -> candidate.getProvince().equals(region.getProvince()) && region.getCity().equals(candidate.getCity()))
+                        .toList());
+            }
+        }
+        RegionAliasCatalog aliases = new RegionAliasCatalog();
+        RegionNormalizer normalizer = new RegionNormalizer(aliases);
+        return new UserRegionTextResolver(new RegionCatalog(repository, aliases, normalizer), aliases, normalizer);
     }
 }

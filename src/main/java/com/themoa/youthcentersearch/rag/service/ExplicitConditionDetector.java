@@ -1,7 +1,6 @@
 package com.themoa.youthcentersearch.rag.service;
 
-import com.themoa.youthcentersearch.policy.region.RegionCatalog;
-import com.themoa.youthcentersearch.policy.region.RegionNormalizer;
+import com.themoa.youthcentersearch.policy.region.UserRegionTextResolver;
 import org.springframework.stereotype.Component;
 
 import java.util.regex.Pattern;
@@ -12,12 +11,10 @@ public class ExplicitConditionDetector {
     private static final Pattern EMPLOYMENT = Pattern.compile("무직|미취업|취준생|취업\\s*준비|구직자|재직자|직장인|회사원|사회초년생");
     private static final Pattern STUDENT = Pattern.compile("대학생(?:이야|입니다|이에요|이고|으로|인\\s*나|인\\s*청년)?|재학생|휴학생");
 
-    private final RegionCatalog regionCatalog;
-    private final RegionNormalizer regionNormalizer;
+    private final UserRegionTextResolver userRegionTextResolver;
 
-    public ExplicitConditionDetector(RegionCatalog regionCatalog, RegionNormalizer regionNormalizer) {
-        this.regionCatalog = regionCatalog;
-        this.regionNormalizer = regionNormalizer;
+    public ExplicitConditionDetector(UserRegionTextResolver userRegionTextResolver) {
+        this.userRegionTextResolver = userRegionTextResolver;
     }
 
     public boolean ageExplicit(String query) {
@@ -33,21 +30,7 @@ public class ExplicitConditionDetector {
     }
 
     public boolean regionExplicit(String query) {
-        if (query == null || query.isBlank()) {
-            return false;
-        }
-        if (!regionCatalog.findInText(regionNormalizer.normalizeProvince(query)).isEmpty()) {
-            return true;
-        }
-        String compact = query.replaceAll("\\s+", "");
-        return regionCatalog.allSpecificRegionsByLongestName().stream().anyMatch(region -> {
-            if (region.getCity() == null || region.getCity().isBlank()) {
-                return false;
-            }
-            String city = region.getCity().replaceAll("\\s+", "");
-            String shortCity = city.replaceAll("(특별시|광역시|특별자치시|특별자치도|시|군|구)$", "");
-            return !shortCity.isBlank() && compact.contains(shortCity);
-        });
+        return query != null && userRegionTextResolver.resolve(query).resolved();
     }
 
     public boolean supportTypeExplicit(String query) {

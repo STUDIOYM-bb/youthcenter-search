@@ -8,6 +8,10 @@ public record PolicyRegionRebuildResult(
         long nationwideToUnknownCount,
         long unchangedCount,
         long failedCount,
-        long pendingQueuedCount
+        long pendingQueuedCount,
+        long snapshotUsedCount,
+        long snapshotMissingCount,
+        long fallbackUsedCount,
+        long reviewRequiredCount
 ) {
 }

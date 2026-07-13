@@ -128,6 +128,19 @@ app:
     batch-size: ${REGION_REBUILD_BATCH_SIZE:100}
     enqueue-changed-policies: ${REGION_REBUILD_ENQUEUE_CHANGED_POLICIES:true}
 
+  region-sync:
+    enabled: ${SGIS_REGION_SYNC_ENABLED:false}
+    sync-on-startup: ${SGIS_REGION_SYNC_ON_STARTUP:false}
+    cron: ${SGIS_REGION_SYNC_CRON:0 0 4 1 * *}
+    request-delay: ${SGIS_REGION_SYNC_REQUEST_DELAY:100ms}
+    connect-timeout: ${SGIS_REGION_SYNC_CONNECT_TIMEOUT:5s}
+    read-timeout: ${SGIS_REGION_SYNC_READ_TIMEOUT:20s}
+    max-retries: ${SGIS_REGION_SYNC_MAX_RETRIES:3}
+    sgis:
+      base-url: ${SGIS_BASE_URL:https://sgisapi.mods.go.kr}
+      consumer-key: ${SGIS_CONSUMER_KEY:}
+      consumer-secret: ${SGIS_CONSUMER_SECRET:}
+
 logging:
   level:
     root: INFO

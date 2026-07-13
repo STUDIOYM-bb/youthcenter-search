@@ -19,3 +19,10 @@
 - `ALWAYS`: 매 정책 상세 API 호출
 
 기본값은 `MISSING_ONLY`이다.
+# 정책별 원본 Snapshot
+
+페이지 원본은 `policy_raw_data`에 페이지당 한 번 저장한다. 정책 저장이 성공하면 각 정책의 원본 필드 전체를 `policy_source_snapshot`에 upsert한다.
+
+이 snapshot은 `zipCd`, `plcySprtCn`, `ptcpPrpTrgtCn`, `addAplyQlfcCndCn`, 기관 필드 등 지역 재계산에 필요한 온통청년 원본 필드를 보존하기 위한 운영 테이블이다.
+
+관리자 정책 수집 Job은 진행률 응답에 단계, 페이지, 처리 건수, 경과 시간, ETA를 포함한다.

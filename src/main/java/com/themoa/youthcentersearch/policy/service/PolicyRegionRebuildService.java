@@ -1,11 +1,15 @@
 package com.themoa.youthcentersearch.policy.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.themoa.youthcentersearch.admin.service.JobProgressUpdate;
 import com.themoa.youthcentersearch.policy.domain.Policy;
 import com.themoa.youthcentersearch.policy.domain.PolicyEmbeddingSync;
 import com.themoa.youthcentersearch.policy.domain.PolicyRegion;
 import com.themoa.youthcentersearch.policy.region.PolicyRegionResolver;
 import com.themoa.youthcentersearch.policy.repository.PolicyEmbeddingSyncRepository;
 import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
+import com.themoa.youthcentersearch.policy.repository.PolicySourceSnapshotRepository;
 import com.themoa.youthcentersearch.rag.service.PolicyDocumentBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,6 +34,8 @@ public class PolicyRegionRebuildService {
     private final PolicyDocumentBuilder documentBuilder;
     private final RegionRebuildProperties properties;
     private final TransactionTemplate transactionTemplate;
+    private final PolicySourceSnapshotRepository snapshotRepository;
+    private final ObjectMapper objectMapper;
 
     public PolicyRegionRebuildService(PolicyRepository policyRepository,
                                       PolicyRegionResolver regionResolver,
@@ -36,7 +43,9 @@ public class PolicyRegionRebuildService {
                                       PolicyEmbeddingSyncRepository syncRepository,
                                       PolicyDocumentBuilder documentBuilder,
                                       RegionRebuildProperties properties,
-                                      TransactionTemplate transactionTemplate) {
+                                      TransactionTemplate transactionTemplate,
+                                      PolicySourceSnapshotRepository snapshotRepository,
+                                      ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
         this.regionResolver = regionResolver;
         this.regionSyncService = regionSyncService;
@@ -44,9 +53,15 @@ public class PolicyRegionRebuildService {
         this.documentBuilder = documentBuilder;
         this.properties = properties;
         this.transactionTemplate = transactionTemplate;
+        this.snapshotRepository = snapshotRepository;
+        this.objectMapper = objectMapper;
     }
 
     public PolicyRegionRebuildResult rebuildAll() {
+        return rebuildAll(null);
+    }
+
+    public PolicyRegionRebuildResult rebuildAll(Consumer<JobProgressUpdate> progressConsumer) {
         long total = policyRepository.countByActiveTrue();
         long processed = 0;
         long changed = 0;
@@ -55,7 +70,12 @@ public class PolicyRegionRebuildService {
         long unchanged = 0;
         long failed = 0;
         long pendingQueued = 0;
+        long snapshotUsed = 0;
+        long snapshotMissing = 0;
+        long fallbackUsed = 0;
+        long reviewRequired = 0;
         int page = 0;
+        int totalBatches = (int) Math.ceil((double) total / Math.max(1, properties.getBatchSize()));
         while (true) {
             var ids = policyRepository.findActivePolicyIds(PageRequest.of(page++, Math.max(1, properties.getBatchSize())));
             if (ids.isEmpty()) {
@@ -63,6 +83,9 @@ public class PolicyRegionRebuildService {
             }
             for (Integer id : ids) {
                 try {
+                    notify(progressConsumer, new JobProgressUpdate("REBUILDING", "지역 재계산 중", total, processed,
+                            changed, failed, 0, 0, page, totalBatches, String.valueOf(id), 0, 0,
+                            "정책 지역을 다시 계산합니다."));
                     RebuildOneResult result = rebuildOne(id);
                     processed++;
                     if (result.changed()) {
@@ -73,14 +96,20 @@ public class PolicyRegionRebuildService {
                     } else {
                         unchanged++;
                     }
+                    if (result.snapshotUsed()) snapshotUsed++;
+                    if (result.snapshotMissing()) snapshotMissing++;
+                    if (result.fallbackUsed()) fallbackUsed++;
+                    if (result.reviewRequired()) reviewRequired++;
                 } catch (RuntimeException ex) {
                     failed++;
                     log.warn("Policy region rebuild failed. policyId={}", id, ex);
                 }
             }
+            notify(progressConsumer, new JobProgressUpdate("REBUILDING", "지역 재계산 중", total, processed,
+                    changed, failed, 0, 0, page, totalBatches, null, 0, 0, "지역 재계산 배치 완료"));
         }
         return new PolicyRegionRebuildResult(total, processed, changed, nationwideToRegion, nationwideToUnknown,
-                unchanged, failed, pendingQueued);
+                unchanged, failed, pendingQueued, snapshotUsed, snapshotMissing, fallbackUsed, reviewRequired);
     }
 
     private RebuildOneResult rebuildOne(Integer policyId) {
@@ -91,7 +120,8 @@ public class PolicyRegionRebuildService {
                     .map(region -> region.getRegion().getRegionCode())
                     .collect(Collectors.toSet());
             boolean wasNationwide = before.contains("KR");
-            var resolution = regionResolver.resolve(fields(policy));
+            FieldSource fieldSource = fields(policy);
+            var resolution = regionResolver.resolve(fieldSource.fields());
             var syncResult = regionSyncService.syncRegions(policy, resolution);
             boolean queued = false;
             if (syncResult.changed() && properties.isEnqueueChangedPolicies()) {
@@ -108,11 +138,23 @@ public class PolicyRegionRebuildService {
             }
             return new RebuildOneResult(syncResult.changed(), wasNationwide,
                     resolution.scope() == com.themoa.youthcentersearch.policy.region.RegionScope.UNKNOWN,
-                    !resolution.regionCodes().isEmpty() && !resolution.regionCodes().contains("KR"), queued);
+                    !resolution.regionCodes().isEmpty() && !resolution.regionCodes().contains("KR"), queued,
+                    fieldSource.snapshotUsed(), fieldSource.snapshotMissing(), fieldSource.fallbackUsed(),
+                    fieldSource.snapshotMissing() || resolution.needsReview());
         });
     }
 
-    private Map<String, Object> fields(Policy policy) {
+    private FieldSource fields(Policy policy) {
+        var snapshot = snapshotRepository.findByPolicyId(policy.getId());
+        if (snapshot.isPresent()) {
+            try {
+                Map<String, Object> fields = objectMapper.readValue(snapshot.get().getRawPolicyJson(), new TypeReference<>() {
+                });
+                return new FieldSource(fields, true, false, false);
+            } catch (Exception ex) {
+                log.warn("Policy source snapshot parse failed. policyId={}", policy.getId(), ex);
+            }
+        }
         Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("title", policy.getTitle());
         fields.put("plcyNm", policy.getTitle());
@@ -124,9 +166,19 @@ public class PolicyRegionRebuildService {
             fields.put("conditionSummary", policy.getCondition().getConditionSummary());
             fields.put("ptcpPrpTrgtCn", policy.getCondition().getConditionSummary());
         }
-        return fields;
+        return new FieldSource(fields, false, true, true);
     }
 
-    private record RebuildOneResult(boolean changed, boolean wasNationwide, boolean nowUnknown, boolean nowRegion, boolean queued) {
+    private void notify(Consumer<JobProgressUpdate> consumer, JobProgressUpdate update) {
+        if (consumer != null) {
+            consumer.accept(update);
+        }
+    }
+
+    private record FieldSource(Map<String, Object> fields, boolean snapshotUsed, boolean snapshotMissing, boolean fallbackUsed) {
+    }
+
+    private record RebuildOneResult(boolean changed, boolean wasNationwide, boolean nowUnknown, boolean nowRegion, boolean queued,
+                                    boolean snapshotUsed, boolean snapshotMissing, boolean fallbackUsed, boolean reviewRequired) {
     }
 }

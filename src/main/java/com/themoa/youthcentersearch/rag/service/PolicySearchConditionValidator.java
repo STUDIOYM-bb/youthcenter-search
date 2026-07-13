@@ -2,6 +2,8 @@ package com.themoa.youthcentersearch.rag.service;
 
 import com.themoa.youthcentersearch.rag.dto.PolicySearchCondition;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchMode;
+import com.themoa.youthcentersearch.policy.region.UserRegionResolution;
+import com.themoa.youthcentersearch.policy.region.UserRegionTextResolver;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -9,14 +11,19 @@ import org.springframework.util.StringUtils;
 public class PolicySearchConditionValidator {
     private final ExplicitConditionDetector explicitDetector;
     private final PolicyKeywordExtractor keywordExtractor;
+    private final UserRegionTextResolver userRegionTextResolver;
 
-    public PolicySearchConditionValidator(ExplicitConditionDetector explicitDetector, PolicyKeywordExtractor keywordExtractor) {
+    public PolicySearchConditionValidator(ExplicitConditionDetector explicitDetector,
+                                          PolicyKeywordExtractor keywordExtractor,
+                                          UserRegionTextResolver userRegionTextResolver) {
         this.explicitDetector = explicitDetector;
         this.keywordExtractor = keywordExtractor;
+        this.userRegionTextResolver = userRegionTextResolver;
     }
 
     public PolicySearchCondition validate(String query, PolicySearchCondition parsed, Integer resultSize) {
-        boolean regionExplicit = explicitDetector.regionExplicit(query);
+        UserRegionResolution resolvedRegion = resolveRegion(query, parsed);
+        boolean regionExplicit = resolvedRegion.resolved();
         boolean ageExplicit = explicitDetector.ageExplicit(query);
         boolean employmentExplicit = explicitDetector.employmentExplicit(query);
         boolean studentExplicit = explicitDetector.studentExplicit(query);
@@ -24,9 +31,9 @@ public class PolicySearchConditionValidator {
         boolean supportTypeExplicit = explicitDetector.supportTypeExplicit(query);
         var keywords = keywordExtractor.extract(query, parsed == null ? null : parsed.keywords());
 
-        String province = regionExplicit && parsed != null ? parsed.province() : null;
-        String city = regionExplicit && parsed != null ? parsed.city() : null;
-        String district = regionExplicit && parsed != null ? parsed.district() : null;
+        String province = regionExplicit ? resolvedRegion.province() : null;
+        String city = regionExplicit ? resolvedRegion.city() : null;
+        String district = regionExplicit ? resolvedRegion.district() : null;
         Integer age = ageExplicit && parsed != null ? parsed.age() : null;
         String employment = employmentExplicit && parsed != null ? parsed.employmentStatus() : null;
         Boolean student = studentExplicit && parsed != null ? parsed.studentStatus() : null;
@@ -36,8 +43,30 @@ public class PolicySearchConditionValidator {
                 StringUtils.hasText(category) || !supportTypes.isEmpty(), !keywords.coreKeywords().isEmpty());
         return new PolicySearchCondition(province, city, district, age, employment, student,
                 parsed == null ? null : parsed.careerStage(), category, supportTypes, keywords.coreKeywords(),
-                keywords.expandedKeywords(), regionExplicit, ageExplicit, employmentExplicit, studentExplicit,
+                keywords.expandedKeywords(), resolvedRegion.regionName(), resolvedRegion.status().name(),
+                regionExplicit, ageExplicit, employmentExplicit, studentExplicit,
                 categoryExplicit, supportTypeExplicit, mode, resultSize);
+    }
+
+    private UserRegionResolution resolveRegion(String query, PolicySearchCondition parsed) {
+        UserRegionResolution queryRegion = userRegionTextResolver.resolve(query);
+        if (queryRegion.resolved() || queryRegion.status().name().equals("AMBIGUOUS")) {
+            return queryRegion;
+        }
+        if (parsed != null && StringUtils.hasText(parsed.rawRegionText())) {
+            UserRegionResolution raw = userRegionTextResolver.resolve(parsed.rawRegionText());
+            if (raw.resolved() || raw.status().name().equals("AMBIGUOUS")) {
+                return raw;
+            }
+        }
+        if (parsed != null && StringUtils.hasText(parsed.province())) {
+            String combined = parsed.province() + " " + (parsed.city() == null ? "" : parsed.city());
+            UserRegionResolution openAiRegion = userRegionTextResolver.resolve(combined);
+            if (openAiRegion.resolved() || openAiRegion.status().name().equals("AMBIGUOUS")) {
+                return openAiRegion;
+            }
+        }
+        return UserRegionResolution.notFound();
     }
 
     private PolicySearchMode mode(boolean regionExplicit,

@@ -202,6 +202,48 @@ button.secondary:hover { background: #dde2f0; }
 .button-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
 .hint { color: var(--muted); margin: 10px 0 0; }
 
+.progress-panel {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.progress-row {
+    display: grid;
+    gap: 6px;
+}
+
+.progress-label {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.progress-label strong {
+    color: var(--text);
+}
+
+.progress-track {
+    width: 100%;
+    height: 12px;
+    overflow: hidden;
+    background: #e7ebf3;
+    border-radius: 999px;
+}
+
+.progress-track.secondary {
+    height: 10px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: inherit;
+    transition: width .25s ease;
+}
+
 .table-wrapper { overflow-x: auto; }
 
 table {

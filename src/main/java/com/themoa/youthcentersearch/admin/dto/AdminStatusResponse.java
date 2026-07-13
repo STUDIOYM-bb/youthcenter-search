@@ -24,11 +24,21 @@ public record AdminStatusResponse(
         long syncedCount,
         long failedCount,
         Long qdrantDocumentCount,
+        long policySnapshotCount,
+        long policySnapshotMissingCount,
         long nationwidePolicyCount,
         long provincePolicyCount,
         long cityPolicyCount,
         long districtPolicyCount,
         long multiplePolicyCount,
-        long unknownPolicyCount
+        long unknownPolicyCount,
+        boolean sgisRegionSyncEnabled,
+        boolean sgisCredentialsConfigured,
+        long regionTotalCount,
+        long regionProvinceCount,
+        long regionCityCount,
+        long regionDistrictCount,
+        String lastRegionSyncTime,
+        String lastRegionSyncStatus
 ) {
 }

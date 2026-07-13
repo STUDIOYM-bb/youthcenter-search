@@ -33,6 +33,19 @@ docker compose up -d
 ./gradlew bootRun
 ```
 
+## SGIS 지역 동기화 설정
+
+전국 시·군·구 지역 검색을 사용하려면 SGIS 키를 발급받아 `config/application-secret.yml`에 입력한다.
+
+```yaml
+SGIS_CONSUMER_KEY: ""
+SGIS_CONSUMER_SECRET: ""
+SGIS_REGION_SYNC_ENABLED: true
+SGIS_REGION_SYNC_ON_STARTUP: false
+```
+
+서버 시작 자동 동기화는 기본적으로 끈다. `/dev` 관리자 화면에서 `전국 행정지역 동기화`를 수동 실행한 뒤, 기존 정책에 적용하려면 `전체 정책 지역 다시 계산`과 `전체 PENDING 임베딩 처리`를 순서대로 실행한다.
+
 ## 생성되는 로컬 파일
 
 Windows PowerShell:

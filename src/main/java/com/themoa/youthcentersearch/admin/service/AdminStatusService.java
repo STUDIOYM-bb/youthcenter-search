@@ -4,7 +4,11 @@ import com.themoa.youthcentersearch.admin.dto.AdminStatusResponse;
 import com.themoa.youthcentersearch.common.config.LocalSecretConfigurationStatus;
 import com.themoa.youthcentersearch.policy.repository.PolicyEmbeddingSyncRepository;
 import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
+import com.themoa.youthcentersearch.policy.repository.RegionCodeRepository;
+import com.themoa.youthcentersearch.policy.repository.PolicySourceSnapshotRepository;
 import com.themoa.youthcentersearch.policy.region.RegionScope;
+import com.themoa.youthcentersearch.region.config.RegionSyncProperties;
+import com.themoa.youthcentersearch.region.service.RegionSynchronizationState;
 import com.themoa.youthcentersearch.rag.config.RagProperties;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.ObjectProvider;
@@ -17,17 +21,29 @@ public class AdminStatusService {
     private final ObjectProvider<VectorStore> vectorStoreProvider;
     private final RagProperties ragProperties;
     private final LocalSecretConfigurationStatus configurationStatus;
+    private final RegionCodeRepository regionCodeRepository;
+    private final PolicySourceSnapshotRepository snapshotRepository;
+    private final RegionSyncProperties regionSyncProperties;
+    private final RegionSynchronizationState regionSynchronizationState;
 
     public AdminStatusService(PolicyRepository policyRepository,
                               PolicyEmbeddingSyncRepository syncRepository,
                               ObjectProvider<VectorStore> vectorStoreProvider,
                               RagProperties ragProperties,
-                              LocalSecretConfigurationStatus configurationStatus) {
+                              LocalSecretConfigurationStatus configurationStatus,
+                              RegionCodeRepository regionCodeRepository,
+                              PolicySourceSnapshotRepository snapshotRepository,
+                              RegionSyncProperties regionSyncProperties,
+                              RegionSynchronizationState regionSynchronizationState) {
         this.policyRepository = policyRepository;
         this.syncRepository = syncRepository;
         this.vectorStoreProvider = vectorStoreProvider;
         this.ragProperties = ragProperties;
         this.configurationStatus = configurationStatus;
+        this.regionCodeRepository = regionCodeRepository;
+        this.snapshotRepository = snapshotRepository;
+        this.regionSyncProperties = regionSyncProperties;
+        this.regionSynchronizationState = regionSynchronizationState;
     }
 
     public AdminStatusResponse status() {
@@ -43,6 +59,12 @@ public class AdminStatusService {
         long districtPolicyCount = 0;
         long multiplePolicyCount = 0;
         long unknownPolicyCount = 0;
+        long regionTotalCount = 0;
+        long regionProvinceCount = 0;
+        long regionCityCount = 0;
+        long regionDistrictCount = 0;
+        long policySnapshotCount = 0;
+        long policySnapshotMissingCount = 0;
         boolean mysqlAvailable = true;
         try {
             totalPolicyCount = policyRepository.count();
@@ -58,6 +80,12 @@ public class AdminStatusService {
             districtPolicyCount = scopeCounts.district;
             multiplePolicyCount = scopeCounts.multiple;
             unknownPolicyCount = scopeCounts.unknown;
+            regionTotalCount = regionCodeRepository.count();
+            regionProvinceCount = regionCodeRepository.countByRegionLevel("PROVINCE");
+            regionCityCount = regionCodeRepository.countByRegionLevel("CITY");
+            regionDistrictCount = regionCodeRepository.countByRegionLevel("DISTRICT");
+            policySnapshotCount = snapshotRepository.countByPolicyActiveTrue();
+            policySnapshotMissingCount = Math.max(0, activePolicyCount - policySnapshotCount);
         } catch (RuntimeException ex) {
             mysqlAvailable = false;
         }
@@ -86,12 +114,22 @@ public class AdminStatusService {
                 syncedCount,
                 failedCount,
                 null,
+                policySnapshotCount,
+                policySnapshotMissingCount,
                 nationwidePolicyCount,
                 provincePolicyCount,
                 cityPolicyCount,
                 districtPolicyCount,
                 multiplePolicyCount,
-                unknownPolicyCount
+                unknownPolicyCount,
+                regionSyncProperties.enabled(),
+                regionSyncProperties.credentialsConfigured(),
+                regionTotalCount,
+                regionProvinceCount,
+                regionCityCount,
+                regionDistrictCount,
+                regionSynchronizationState.lastSyncTime() == null ? null : regionSynchronizationState.lastSyncTime().toString(),
+                regionSynchronizationState.lastStatus()
         );
     }
 

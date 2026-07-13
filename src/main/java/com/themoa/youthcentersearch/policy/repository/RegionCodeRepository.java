@@ -12,4 +12,6 @@ public interface RegionCodeRepository extends JpaRepository<RegionCode, Integer>
     List<RegionCode> findByProvince(String province);
 
     List<RegionCode> findByProvinceAndCity(String province, String city);
+
+    long countByRegionLevel(String regionLevel);
 }
