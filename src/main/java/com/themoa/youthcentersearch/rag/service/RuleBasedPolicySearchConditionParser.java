@@ -21,6 +21,8 @@ public class RuleBasedPolicySearchConditionParser {
         if (text.contains("수원")) {
             province = "경기도";
             city = "수원시";
+        } else if (text.contains("제주도") || text.contains("제주")) {
+            province = "제주특별자치도";
         } else if (text.contains("경기도") || text.contains("경기")) {
             province = "경기도";
         } else if (text.contains("서울")) {

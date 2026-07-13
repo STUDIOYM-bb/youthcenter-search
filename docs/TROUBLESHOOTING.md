@@ -20,6 +20,18 @@ Qdrant gRPC 포트는 기본 6334다. `QDRANT_HOST`, `QDRANT_GRPC_PORT`, `QDRANT
 
 정책 수집과 임베딩이 먼저 완료되어야 한다. 관리자 화면에서 활성 정책 수, PENDING, SYNCED 상태를 확인한다.
 
+지역을 입력하지 않은 `청년 면접 수당` 같은 검색은 `KEYWORD` 모드로 동작해야 한다. 검색 요약에서 `지역 필터: 미적용`, `나이 필터: 미적용`, `취업 상태 필터: 미적용`인지 확인한다.
+
+OpenAI가 말하지 않은 조건을 `age=0`, `studentStatus=false`, 빈 문자열로 반환해도 서버에서 null로 정리한다. 그래도 결과가 없으면 검색 진단의 `fallbackReason`을 확인한다.
+
+## 다른 지역 정책이 검색됨
+
+관리자 화면에서 `전체 정책 지역 다시 계산`을 실행한다. 이후 변경 정책이 PENDING으로 등록되므로 `전체 PENDING 임베딩 처리`를 실행해 Qdrant Metadata를 갱신한다.
+
+`UNKNOWN`은 기본 검색 결과에서 제외된다. 지역 미확인 정책까지 보고 싶으면 `RAG_INCLUDE_UNKNOWN_REGION=true`를 설정한다.
+
+단, 지역을 입력하지 않은 키워드 검색에서는 지역 미확인 정책도 지역 필터 때문에 제거하지 않는다.
+
 ## 온통청년 API 오류
 
 기본 URL은 `/go/ythip/getPlcy`이다. 구버전 `/opi/youthPlcyList.do`는 운영 수집에 사용하지 않는다. API 키는 서버 설정에만 둔다.

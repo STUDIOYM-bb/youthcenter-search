@@ -3,7 +3,9 @@ package com.themoa.youthcentersearch.admin.controller;
 import com.themoa.youthcentersearch.admin.dto.AdminJobStatus;
 import com.themoa.youthcentersearch.admin.dto.AdminStatusResponse;
 import com.themoa.youthcentersearch.admin.service.AdminJobService;
+import com.themoa.youthcentersearch.admin.service.AdminRegionDiagnosticsService;
 import com.themoa.youthcentersearch.admin.service.AdminStatusService;
+import com.themoa.youthcentersearch.common.config.LocalSecretConfigurationStatus;
 import com.themoa.youthcentersearch.common.exception.YouthCenterApiException;
 import com.themoa.youthcentersearch.common.response.ApiResponse;
 import com.themoa.youthcentersearch.youthcenter.dto.response.YouthCenterProbeResponse;
@@ -23,14 +25,20 @@ public class AdminController {
     private final AdminStatusService statusService;
     private final AdminJobService jobService;
     private final YouthCenterDiagnosticService diagnosticService;
+    private final AdminRegionDiagnosticsService regionDiagnosticsService;
+    private final LocalSecretConfigurationStatus configurationStatus;
     private final String adminApiKey;
 
     public AdminController(AdminStatusService statusService, AdminJobService jobService,
                            YouthCenterDiagnosticService diagnosticService,
+                           AdminRegionDiagnosticsService regionDiagnosticsService,
+                           LocalSecretConfigurationStatus configurationStatus,
                            @Value("${app.admin-api-key:}") String adminApiKey) {
         this.statusService = statusService;
         this.jobService = jobService;
         this.diagnosticService = diagnosticService;
+        this.regionDiagnosticsService = regionDiagnosticsService;
+        this.configurationStatus = configurationStatus;
         this.adminApiKey = adminApiKey;
     }
 
@@ -70,6 +78,12 @@ public class AdminController {
         return ApiResponse.ok(jobService.start("EMBEDDING_RETRY_FAILED"));
     }
 
+    @PostMapping("/jobs/policy-region-rebuild")
+    public ApiResponse<AdminJobStatus> rebuildRegions(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
+        requireAdmin(key);
+        return ApiResponse.ok(jobService.start("POLICY_REGION_REBUILD"));
+    }
+
     @PostMapping("/jobs/full-reindex")
     public ApiResponse<AdminJobStatus> fullReindex(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
         requireAdmin(key);
@@ -92,7 +106,19 @@ public class AdminController {
     @PostMapping("/qdrant/search")
     public ApiResponse<String> qdrantSearch(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
         requireAdmin(key);
+        if (!configurationStatus.ragEnabled()) {
+            throw new YouthCenterApiException("""
+                    RAG 기능이 비활성화되어 있습니다.
+                    RAG_ENABLED=true 설정을 확인하세요.""");
+        }
         return ApiResponse.ok("사용자 검색 API /api/policies/search 에서 Qdrant 검색을 수행합니다.");
+    }
+
+    @GetMapping("/regions/anomalies")
+    public ApiResponse<java.util.List<com.themoa.youthcentersearch.admin.dto.RegionAnomalyResponse>> regionAnomalies(
+            @RequestHeader(value = "X-Admin-Key", required = false) String key) {
+        requireAdmin(key);
+        return ApiResponse.ok(regionDiagnosticsService.anomalies());
     }
 
     private void requireAdmin(String key) {

@@ -20,6 +20,6 @@ public interface PolicyRepository extends JpaRepository<Policy, Integer> {
     @Query("select p from Policy p where p.id in :ids")
     List<Policy> findWithRelationsByIdIn(List<Integer> ids);
 
-    @Query("select p.id from Policy p where p.active = true")
+    @Query("select p.id from Policy p where p.active = true order by p.id asc")
     List<Integer> findActivePolicyIds(Pageable pageable);
 }

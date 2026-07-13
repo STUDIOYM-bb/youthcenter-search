@@ -63,15 +63,119 @@ GET https://www.youthcenter.go.kr/go/ythip/getPlcy
 
 `pagging` 오타를 우선 지원하고, 향후 서버 변경에 대비해 `paging`도 보조로 읽습니다.
 
-## 비밀 설정
+## 로컬 비밀 설정
 
 실제 비밀값은 `config/application-secret.yml`에 둡니다. 이 파일은 Git에 포함하지 않습니다.
+
+Windows PowerShell:
 
 ```powershell
 Copy-Item config/application-secret.example.yml config/application-secret.yml
 ```
 
-IntelliJ 또는 `bootRun`은 `config/application-secret.yml`을 읽습니다. Docker Compose는 루트 `.env`를 읽습니다. Spring Boot는 별도 라이브러리 없이 `.env`를 자동으로 읽지 않습니다.
+macOS/Linux:
+
+```bash
+cp config/application-secret.example.yml config/application-secret.yml
+```
+
+최소 입력 항목:
+
+```yaml
+YOUTH_CENTER_API_KEY: "실제 온통청년 API Key"
+OPENAI_API_KEY: "실제 OpenAI API Key"
+ADMIN_API_KEY: "로컬 관리자 Key"
+```
+
+실제 API 키, 관리자 키, DB 비밀번호, Qdrant API Key는 README, HTML, JavaScript, 테스트 Fixture에 넣지 않습니다.
+
+## Docker 환경변수
+
+Docker Compose는 프로젝트 루트의 `.env`를 사용합니다.
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+macOS/Linux:
+
+```bash
+cp .env.example .env
+```
+
+`.env`는 주로 Docker Compose의 MySQL 설정에 사용합니다. Spring Boot를 IntelliJ 또는 `bootRun`으로 실행할 때는 별도 라이브러리 없이는 `.env`를 자동으로 읽지 않습니다. Spring Boot의 비밀 설정은 `config/application-secret.yml`을 사용합니다.
+
+## 다른 환경에서 clone 후 실행
+
+Windows:
+
+```powershell
+git clone https://github.com/STUDIOYM-bb/youthcenter-search.git
+cd youthcenter-search
+.\scripts\setup-local.ps1
+
+# config/application-secret.yml에 실제 Key 입력
+
+docker compose up -d
+.\gradlew.bat clean test
+.\gradlew.bat bootRun
+```
+
+macOS/Linux:
+
+```bash
+git clone https://github.com/STUDIOYM-bb/youthcenter-search.git
+cd youthcenter-search
+chmod +x scripts/setup-local.sh
+./scripts/setup-local.sh
+
+# config/application-secret.yml에 실제 Key 입력
+
+docker compose up -d
+./gradlew clean test
+./gradlew bootRun
+```
+
+## IntelliJ Working Directory
+
+`application.yml`은 외부 비밀 설정을 `./config/application-secret.yml` 상대경로로 읽습니다. 따라서 IntelliJ 실행 설정의 Working directory는 현재 `youthcenter-search` 프로젝트 루트여야 합니다.
+
+설정 절차:
+
+1. Run
+2. Edit Configurations
+3. Spring Boot 실행 설정 선택
+4. Working directory
+5. 현재 `youthcenter-search` 프로젝트 루트 선택
+
+Working directory가 다른 경로라면 `config/application-secret.yml`을 찾지 못할 수 있습니다. 파일이 없어도 서버 기동은 실패하지 않고, 로그에 `External secret configuration: NOT FOUND`가 출력됩니다.
+
+## API Key 설정 확인
+
+관리자 개발 화면 `http://localhost:8080/dev` 또는 `GET /api/admin/status`에서 설정 상태를 확인합니다. API Key 원문은 반환하지 않고 다음 상태만 표시합니다.
+
+- `secretConfigFileFound`
+- `youthCenterApiKeyConfigured`
+- `openAiApiKeyConfigured`
+- `springAiChatModel`
+- `springAiEmbeddingModel`
+- `chatModelAvailable`
+- `embeddingModelAvailable`
+- `ragEnabled`
+- `mysqlAvailable`
+- `qdrantAvailable`
+
+키가 없으면 관리자 상태 화면은 다음처럼 표시합니다.
+
+- 온통청년 API Key: 미설정
+- OpenAI API Key: 미설정
+- OpenAI ChatModel: 비활성
+- OpenAI EmbeddingModel: 비활성
+- RAG: 비활성
+
+## RAG 활성화
 
 RAG 활성화 예:
 
@@ -83,7 +187,43 @@ YOUTH_CENTER_API_KEY: ""
 OPENAI_API_KEY: ""
 ```
 
-실제 API 키, 관리자 키, DB 비밀번호, Qdrant API Key는 README, HTML, JavaScript, 테스트 Fixture에 넣지 않습니다.
+`SPRING_AI_MODEL_CHAT=openai`는 OpenAI 자연어 조건 분석을 활성화합니다.
+
+`SPRING_AI_MODEL_EMBEDDING=openai`는 OpenAI 임베딩 모델을 활성화합니다.
+
+`RAG_ENABLED=true`는 Qdrant VectorStore와 RAG 기능을 활성화합니다.
+
+API Key만 입력하고 `SPRING_AI_MODEL_CHAT=none`, `SPRING_AI_MODEL_EMBEDDING=none`, `RAG_ENABLED=false`로 두면 OpenAI와 RAG는 동작하지 않습니다.
+
+## 자주 발생하는 설정 오류
+
+온통청년 API Key가 없을 때:
+
+```text
+온통청년 API Key가 설정되지 않았습니다.
+config/application-secret.yml의 YOUTH_CENTER_API_KEY를 입력하세요.
+```
+
+OpenAI Chat이 비활성화됐을 때:
+
+```text
+OpenAI Chat Model이 비활성화되어 있습니다.
+OPENAI_API_KEY와 SPRING_AI_MODEL_CHAT=openai 설정을 확인하세요.
+```
+
+OpenAI Embedding이 비활성화됐을 때:
+
+```text
+OpenAI Embedding Model이 비활성화되어 있습니다.
+OPENAI_API_KEY와 SPRING_AI_MODEL_EMBEDDING=openai 설정을 확인하세요.
+```
+
+RAG가 비활성화됐을 때:
+
+```text
+RAG 기능이 비활성화되어 있습니다.
+RAG_ENABLED=true 설정을 확인하세요.
+```
 
 ## 로컬 실행
 
@@ -142,6 +282,10 @@ docker compose up -d
 6. Semantic Score와 조건 점수를 합산해 Hybrid Ranking
 7. 검색된 정책만 근거로 답변 생성
 
+지역은 `NATIONWIDE`와 `UNKNOWN`을 분리한다. 지역 근거가 없으면 전국이 아니라 UNKNOWN이며, 기본 검색 결과에서 제외된다.
+
+관리자 화면에서 `전체 정책 지역 다시 계산`을 실행하면 기존 정책의 `policy_region`을 새 판정기로 재계산하고, 변경 정책을 임베딩 PENDING으로 등록한다.
+
 검색 관련도는 신청 가능성을 확정하지 않습니다. 최종 신청 자격은 정책 상세와 공식 기관을 확인해야 합니다.
 
 ## 주요 API
@@ -164,6 +308,16 @@ docker compose up -d
 - `GET /api/admin/jobs/{jobId}`
 - `GET /api/admin/jobs/latest`
 - `POST /api/admin/qdrant/search`
+
+## 키워드와 조건 검색
+
+정책 검색은 세 가지 모드로 동작한다.
+
+- `KEYWORD`: `청년 면접 수당`, `면접수당`처럼 정책명이나 주제만 검색한다.
+- `CONDITION`: 지역, 나이, 취업 상태 같은 자격 조건 중심으로 검색한다.
+- `HYBRID`: `경기도 청년 면접 수당`, `수원 사는 27살 무직 청년 지원금`처럼 키워드와 조건을 함께 사용한다.
+
+지역, 나이, 취업 상태는 사용자가 직접 말한 경우에만 Hard Filter로 적용한다. 지역을 입력하지 않은 키워드 검색에서는 서울, 경기, 부산, 서산 등 모든 지역의 관련 정책을 후보로 두고 Qdrant semantic 후보와 MySQL lexical 후보를 병합해 정렬한다.
 
 ## 테스트
 
@@ -200,5 +354,7 @@ git ls-files .env
 - [Collection Flow](docs/COLLECTION_FLOW.md)
 - [Embedding Flow](docs/EMBEDDING_FLOW.md)
 - [RAG Search Flow](docs/RAG_SEARCH_FLOW.md)
+- [Keyword Search](docs/KEYWORD_SEARCH.md)
+- [Region Resolution](docs/REGION_RESOLUTION.md)
 - [Local Setup](docs/LOCAL_SETUP.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)

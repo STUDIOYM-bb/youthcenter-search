@@ -32,11 +32,15 @@ public class OpenAiNaturalLanguageQueryParser implements NaturalLanguageQueryPar
     @Override
     public NaturalLanguageParseResult parse(String query) {
         if (!properties.isOpenaiEnabled() || !StringUtils.hasText(apiKey)) {
-            throw new YouthCenterApiException("OpenAI parser is disabled or API key is empty.");
+            throw new YouthCenterApiException("""
+                    OpenAI Chat Model이 비활성화되어 있습니다.
+                    OPENAI_API_KEY와 SPRING_AI_MODEL_CHAT=openai 설정을 확인하세요.""");
         }
         ChatClient.Builder builder = chatClientBuilderProvider.getIfAvailable();
         if (builder == null) {
-            throw new YouthCenterApiException("Spring AI ChatClient is not available.");
+            throw new YouthCenterApiException("""
+                    OpenAI Chat Model이 비활성화되어 있습니다.
+                    OPENAI_API_KEY와 SPRING_AI_MODEL_CHAT=openai 설정을 확인하세요.""");
         }
         String prompt = """
                 Extract only structured conditions from this Korean youth policy query.

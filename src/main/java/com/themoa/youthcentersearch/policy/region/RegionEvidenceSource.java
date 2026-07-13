@@ -1,0 +1,14 @@
+package com.themoa.youthcentersearch.policy.region;
+
+public enum RegionEvidenceSource {
+    POLICY_TITLE,
+    PARTICIPANT_TARGET,
+    ADDITIONAL_QUALIFICATION,
+    SUPPORT_CONTENT,
+    POLICY_DESCRIPTION,
+    ZIP_CODE,
+    SUPERVISING_INSTITUTION,
+    OPERATING_INSTITUTION,
+    REGISTERING_INSTITUTION,
+    NATIONWIDE_EXPRESSION
+}

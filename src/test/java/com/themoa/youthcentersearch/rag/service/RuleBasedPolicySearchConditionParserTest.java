@@ -17,4 +17,15 @@ class RuleBasedPolicySearchConditionParserTest {
         assertThat(condition.employmentStatus()).isEqualTo("UNEMPLOYED");
         assertThat(condition.keywords()).contains("청년", "지원금", "취업");
     }
+
+    @Test
+    void extractsJejuProvince() {
+        RuleBasedPolicySearchConditionParser parser = new RuleBasedPolicySearchConditionParser();
+
+        var condition = parser.parseCondition("제주도 청년 월세 지원", 10);
+
+        assertThat(condition.province()).isEqualTo("제주특별자치도");
+        assertThat(condition.city()).isNull();
+        assertThat(condition.category()).isEqualTo("주거");
+    }
 }

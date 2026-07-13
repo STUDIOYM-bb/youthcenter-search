@@ -2,6 +2,8 @@ package com.themoa.youthcentersearch.rag.service;
 
 import com.themoa.youthcentersearch.policy.domain.Policy;
 import com.themoa.youthcentersearch.policy.domain.PolicyCondition;
+import com.themoa.youthcentersearch.policy.domain.RegionCode;
+import com.themoa.youthcentersearch.policy.region.RegionScope;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -18,9 +20,17 @@ public class PolicyDocumentMetadataBuilder {
         put(metadata, "title", policy.getTitle());
         put(metadata, "category", policy.getCategory() == null ? null : policy.getCategory().name());
         put(metadata, "agencyName", policy.getAgencyName());
-        put(metadata, "regionCodes", policy.getRegions().stream().map(region -> region.getRegion().getRegionCode()).toList());
-        put(metadata, "regionNames", policy.getRegions().stream().map(region -> region.getRegion().displayName()).toList());
-        put(metadata, "regionScope", regionScope(policy));
+        List<RegionCode> regions = policy.getRegions().stream().map(region -> region.getRegion()).toList();
+        RegionScope scope = regionScope(regions);
+        put(metadata, "regionScope", scope.name());
+        put(metadata, "regionCodes", regions.stream().map(RegionCode::getRegionCode).toList());
+        put(metadata, "regionNames", regions.stream().map(RegionCode::displayName).toList());
+        put(metadata, "provinceNames", regions.stream().map(RegionCode::getProvince).distinct().toList());
+        put(metadata, "cityNames", regions.stream().map(this::cityName).filter(java.util.Objects::nonNull).distinct().toList());
+        put(metadata, "districtNames", regions.stream().filter(region -> "DISTRICT".equals(region.getRegionLevel()))
+                .map(this::districtName).filter(java.util.Objects::nonNull).distinct().toList());
+        put(metadata, "nationwide", scope == RegionScope.NATIONWIDE);
+        put(metadata, "regionUnknown", scope == RegionScope.UNKNOWN);
         PolicyCondition condition = policy.getCondition();
         if (condition != null) {
             put(metadata, "minimumAge", condition.getMinAge());
@@ -38,15 +48,32 @@ public class PolicyDocumentMetadataBuilder {
         return metadata;
     }
 
-    private String regionScope(Policy policy) {
-        List<String> codes = policy.getRegions().stream().map(region -> region.getRegion().getRegionCode()).toList();
-        if (codes.contains("KR")) return "NATIONWIDE";
-        if (codes.isEmpty()) return "UNKNOWN";
-        if (codes.size() > 1) return "MULTIPLE";
-        String code = codes.get(0);
-        if (code.length() == 2) return "PROVINCE";
-        if (code.length() == 5) return "CITY";
-        return "UNKNOWN";
+    private RegionScope regionScope(List<RegionCode> regions) {
+        if (regions.isEmpty()) return RegionScope.UNKNOWN;
+        if (regions.stream().anyMatch(region -> "KR".equals(region.getRegionCode()))) return RegionScope.NATIONWIDE;
+        if (regions.size() > 1) return RegionScope.MULTIPLE;
+        return switch (regions.get(0).getRegionLevel()) {
+            case "PROVINCE" -> RegionScope.PROVINCE;
+            case "CITY" -> RegionScope.CITY;
+            case "DISTRICT" -> RegionScope.DISTRICT;
+            default -> RegionScope.UNKNOWN;
+        };
+    }
+
+    private String cityName(RegionCode region) {
+        if (region.getCity() == null) {
+            return null;
+        }
+        int idx = region.getCity().indexOf(' ');
+        return idx > 0 ? region.getCity().substring(0, idx) : region.getCity();
+    }
+
+    private String districtName(RegionCode region) {
+        if (region.getCity() == null) {
+            return null;
+        }
+        int idx = region.getCity().indexOf(' ');
+        return idx > 0 ? region.getCity().substring(idx + 1) : region.getCity();
     }
 
     private void put(Map<String, Object> metadata, String key, Object value) {

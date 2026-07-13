@@ -37,10 +37,15 @@ public class PolicyDocumentBuilder {
         StringBuilder builder = new StringBuilder();
         append(builder, "정책명", policy.getTitle());
         append(builder, "분야", policy.getCategory() == null ? null : policy.getCategory().name());
-        append(builder, "지역", policy.getRegions().stream()
+        String regionText = policy.getRegions().stream()
                 .map(region -> region.getRegion().displayName())
                 .distinct()
-                .collect(Collectors.joining(", ")));
+                .collect(Collectors.joining(", "));
+        if (!"전국".equals(regionText)) {
+            append(builder, "지역", regionText);
+        } else {
+            append(builder, "지역", "전국");
+        }
         PolicyCondition condition = policy.getCondition();
         if (condition != null) {
             append(builder, "지원 대상", condition.getConditionSummary());

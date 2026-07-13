@@ -11,13 +11,16 @@ import org.springframework.util.StringUtils;
 public class CompositePolicySearchConditionParser implements PolicySearchConditionParser {
     private final ObjectProvider<ChatClient.Builder> chatClientBuilderProvider;
     private final RuleBasedPolicySearchConditionParser ruleBasedParser;
+    private final PolicySearchConditionValidator conditionValidator;
     private final String openAiApiKey;
 
     public CompositePolicySearchConditionParser(ObjectProvider<ChatClient.Builder> chatClientBuilderProvider,
                                                 RuleBasedPolicySearchConditionParser ruleBasedParser,
+                                                PolicySearchConditionValidator conditionValidator,
                                                 @Value("${spring.ai.openai.api-key:}") String openAiApiKey) {
         this.chatClientBuilderProvider = chatClientBuilderProvider;
         this.ruleBasedParser = ruleBasedParser;
+        this.conditionValidator = conditionValidator;
         this.openAiApiKey = openAiApiKey;
     }
 
@@ -31,7 +34,12 @@ public class CompositePolicySearchConditionParser implements PolicySearchConditi
                             .prompt()
                             .system("""
                                     You extract structured Korean youth policy search conditions.
-                                    Return only data that appears or is directly implied by the user query.
+                                    Return only conditions the user explicitly states about themselves or their search.
+                                    Do not infer age, region, employmentStatus, or studentStatus from policy topic words.
+                                    "청년 면접 수당" means keywords only: age=null, employmentStatus=null, province=null.
+                                    "취업 지원 정책" or "면접 수당" does not mean the user is unemployed.
+                                    "청년 정책" does not mean age=19.
+                                    Set missing conditions to null, never to 0, false, or an empty string.
                                     Do not recommend or invent policies.
                                     Fields: province, city, district, age, employmentStatus, studentStatus,
                                     careerStage, category, supportTypes, keywords, resultSize.
@@ -42,21 +50,15 @@ public class CompositePolicySearchConditionParser implements PolicySearchConditi
                             .call()
                             .entity(PolicySearchCondition.class);
                     if (condition != null) {
-                        return new ParsedPolicySearchCondition(withResultSize(condition, resultSize), "OPENAI", false, null);
+                        return new ParsedPolicySearchCondition(conditionValidator.validate(query, condition, resultSize), "OPENAI", false, null);
                     }
                 } catch (RuntimeException ex) {
                     PolicySearchCondition fallback = ruleBasedParser.parseCondition(query, resultSize);
-                    return new ParsedPolicySearchCondition(fallback, "RULE_BASED", true, ex.getMessage());
+                    return new ParsedPolicySearchCondition(conditionValidator.validate(query, fallback, resultSize), "RULE_BASED", true, ex.getMessage());
                 }
             }
         }
-        return new ParsedPolicySearchCondition(ruleBasedParser.parseCondition(query, resultSize), "RULE_BASED", true,
+        return new ParsedPolicySearchCondition(conditionValidator.validate(query, ruleBasedParser.parseCondition(query, resultSize), resultSize), "RULE_BASED", true,
                 "OpenAI ChatModel is not configured.");
-    }
-
-    private PolicySearchCondition withResultSize(PolicySearchCondition condition, Integer resultSize) {
-        return new PolicySearchCondition(condition.province(), condition.city(), condition.district(), condition.age(),
-                condition.employmentStatus(), condition.studentStatus(), condition.careerStage(), condition.category(),
-                condition.supportTypes(), condition.keywords(), resultSize);
     }
 }

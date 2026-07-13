@@ -23,10 +23,15 @@
             const data = await api.get("/api/admin/status");
             renderDefinition(document.getElementById("adminStatus"), {
                 "Spring Boot": data.springBoot,
-                "MySQL": data.mysql ? "UP" : "DOWN",
-                "Qdrant": data.qdrant ? "UP" : "DOWN",
-                "OpenAI Chat": data.openAiChatConfigured ? "설정됨" : "미설정",
-                "OpenAI Embedding": data.openAiEmbeddingConfigured ? "설정됨" : "미설정",
+                "Secret 설정 파일": data.secretConfigFileFound ? "FOUND" : "NOT FOUND",
+                "온통청년 API Key": data.youthCenterApiKeyConfigured ? "설정됨" : "미설정",
+                "OpenAI API Key": data.openAiApiKeyConfigured ? "설정됨" : "미설정",
+                "Spring AI Chat": data.springAiChatModel,
+                "Spring AI Embedding": data.springAiEmbeddingModel,
+                "OpenAI ChatModel": data.chatModelAvailable ? "활성" : "비활성",
+                "OpenAI EmbeddingModel": data.embeddingModelAvailable ? "활성" : "비활성",
+                "MySQL": data.mysqlAvailable ? "UP" : "DOWN",
+                "Qdrant": data.qdrantAvailable ? "UP" : "DOWN",
                 "RAG 활성": data.ragEnabled ? "활성" : "비활성",
                 "Collection Name": data.collectionName,
                 "전체 정책 수": data.totalPolicyCount,
@@ -35,7 +40,13 @@
                 "PROCESSING": data.processingCount,
                 "SYNCED": data.syncedCount,
                 "FAILED": data.failedCount,
-                "Qdrant 문서 수": data.qdrantDocumentCount
+                "Qdrant 문서 수": data.qdrantDocumentCount,
+                "NATIONWIDE 정책 수": data.nationwidePolicyCount,
+                "PROVINCE 정책 수": data.provincePolicyCount,
+                "CITY 정책 수": data.cityPolicyCount,
+                "DISTRICT 정책 수": data.districtPolicyCount,
+                "MULTIPLE 정책 수": data.multiplePolicyCount,
+                "UNKNOWN 정책 수": data.unknownPolicyCount
             });
         } catch (error) {
             showAlert(error.message, true);
@@ -51,6 +62,9 @@
             }
             if (job === "qdrant-search") {
                 endpoint = "/api/admin/qdrant/search";
+            }
+            if (job === "policy-region-rebuild") {
+                endpoint = "/api/admin/jobs/policy-region-rebuild";
             }
             const data = await api.post(endpoint, {});
             document.getElementById("adminRaw").textContent = JSON.stringify(data, null, 2);

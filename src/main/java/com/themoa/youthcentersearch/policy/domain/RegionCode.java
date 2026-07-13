@@ -60,6 +60,10 @@ public class RegionCode {
         return city;
     }
 
+    public String getRegionLevel() {
+        return regionLevel;
+    }
+
     public String displayName() {
         return city == null || city.isBlank() ? province : province + " " + city;
     }

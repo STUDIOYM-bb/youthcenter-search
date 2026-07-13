@@ -2,10 +2,8 @@ package com.themoa.youthcentersearch.policy.service;
 
 import com.themoa.youthcentersearch.policy.domain.Policy;
 import com.themoa.youthcentersearch.policy.domain.PolicyCondition;
-import com.themoa.youthcentersearch.policy.domain.PolicyRegion;
 import com.themoa.youthcentersearch.policy.domain.PolicySource;
-import com.themoa.youthcentersearch.policy.domain.RegionCode;
-import com.themoa.youthcentersearch.policy.repository.PolicyRegionRepository;
+import com.themoa.youthcentersearch.policy.region.PolicyRegionResolver;
 import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
 import com.themoa.youthcentersearch.youthcenter.dto.parsed.YouthPolicyItem;
 import org.springframework.stereotype.Service;
@@ -14,22 +12,22 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class PolicyPersistenceService {
     private final PolicyRepository policyRepository;
-    private final PolicyRegionRepository policyRegionRepository;
     private final PolicyFieldNormalizer normalizer;
-    private final RegionResolver regionResolver;
+    private final PolicyRegionResolver regionResolver;
+    private final PolicyRegionSyncService regionSyncService;
 
-    public PolicyPersistenceService(PolicyRepository policyRepository, PolicyRegionRepository policyRegionRepository,
-                                    PolicyFieldNormalizer normalizer, RegionResolver regionResolver) {
+    public PolicyPersistenceService(PolicyRepository policyRepository,
+                                    PolicyFieldNormalizer normalizer,
+                                    PolicyRegionResolver regionResolver,
+                                    PolicyRegionSyncService regionSyncService) {
         this.policyRepository = policyRepository;
-        this.policyRegionRepository = policyRegionRepository;
         this.normalizer = normalizer;
         this.regionResolver = regionResolver;
+        this.regionSyncService = regionSyncService;
     }
 
     @Transactional
@@ -90,24 +88,8 @@ public class PolicyPersistenceService {
         );
 
         Policy saved = policyRepository.save(policy);
-        syncRegions(saved, regionResolver.resolve(fields));
+        regionSyncService.syncRegions(saved, regionResolver.resolve(fields));
         return new PolicyUpsertResult(saved.getId(), inserted);
-    }
-
-    private void syncRegions(Policy policy, Set<RegionCode> targetRegions) {
-        Map<Integer, PolicyRegion> existing = policyRegionRepository.findByPolicy(policy).stream()
-                .collect(Collectors.toMap(region -> region.getRegion().getId(), region -> region));
-        Set<Integer> targetIds = targetRegions.stream().map(RegionCode::getId).collect(Collectors.toSet());
-        existing.forEach((regionId, policyRegion) -> {
-            if (!targetIds.contains(regionId)) {
-                policyRegionRepository.delete(policyRegion);
-            }
-        });
-        for (RegionCode region : targetRegions) {
-            if (!existing.containsKey(region.getId())) {
-                policyRegionRepository.save(new PolicyRegion(policy, region));
-            }
-        }
     }
 
     private String employmentStatus(Map<String, Object> fields) {

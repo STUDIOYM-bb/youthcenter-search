@@ -4,25 +4,27 @@
 
 1. 사용자가 자연어 질의 입력
 2. OpenAI ChatModel로 조건 추출
-3. OpenAI 실패 또는 키 없음이면 RuleBased fallback
-4. Query Embedding 생성
-5. Qdrant 후보 검색
-6. MySQL에서 실제 정책 로드
-7. Hard Filter 적용
-8. 부족하면 retryTopK로 한 번 확장
-9. 그래도 부족하면 MySQL fallback 검색
-10. Hybrid Ranking
+3. Java 원문 검증으로 명시 조건만 유지
+4. `KEYWORD`, `CONDITION`, `HYBRID` 검색 모드 판정
+5. 정책 키워드와 동의어 추출
+6. Qdrant semantic 후보 검색
+7. MySQL lexical 후보 검색
+8. `policyId` 기준 후보 병합 및 중복 제거
+9. 사용자가 명시한 조건만 Hard Filter 적용
+10. 검색 모드별 Dynamic Ranking
 11. 검색된 정책만 근거로 답변 생성
 
 ## Hard Filter
 
 - `active=false` 제외
-- 명확한 지역 불일치 제외
-- 명확한 나이 불일치 제외
-- 명확한 취업/학생 상태 불일치 제외
+- 사용자가 지역을 명시한 경우에만 명확한 지역 불일치 제외
+- 사용자가 나이를 명시한 경우에만 명확한 나이 불일치 제외
+- 사용자가 취업/학생 상태를 명시한 경우에만 명확한 취업/학생 상태 불일치 제외
 - 신청 마감 정책 제외
 
-지역 UNKNOWN은 기본 검색 결과에서 제외한다. 필요하면 별도 확인 필요 정책 영역으로 확장할 수 있다.
+지역은 점수만 낮추지 않고 Hard Filter로 제거한다. 예를 들어 수원시 사용자는 수원시, 수원시 구 단위, 경기도 전체, 전국 정책만 통과한다. 서울, 성남, 용인, 부평, 서산, 창원 전용 정책은 제거된다.
+
+지역을 입력하지 않은 키워드 검색에서는 지역 Hard Filter를 적용하지 않는다. `청년 면접 수당`은 서울, 경기, 부산, 서산 등 모든 지역 후보를 키워드와 의미 관련도로 비교한다.
 
 ## Hybrid Ranking
 
@@ -37,3 +39,5 @@
 - 신청 상태
 
 점수는 검색 관련도이며 신청 가능성을 확정하지 않는다.
+
+`KEYWORD` 모드는 lexical/title 점수를 높이고 지역 점수를 사용하지 않는다. `HYBRID` 모드는 semantic, lexical, title, region, 조건 점수를 함께 사용한다. 입력되지 않은 조건의 가중치는 제외하고 남은 가중치로 정규화한다.

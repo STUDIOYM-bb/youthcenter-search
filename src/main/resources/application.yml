@@ -124,6 +124,10 @@ app:
       include-unknown-region: ${RAG_INCLUDE_UNKNOWN_REGION:false}
       mysql-fallback-enabled: ${RAG_MYSQL_FALLBACK_ENABLED:true}
 
+  region-rebuild:
+    batch-size: ${REGION_REBUILD_BATCH_SIZE:100}
+    enqueue-changed-policies: ${REGION_REBUILD_ENQUEUE_CHANGED_POLICIES:true}
+
 logging:
   level:
     root: INFO

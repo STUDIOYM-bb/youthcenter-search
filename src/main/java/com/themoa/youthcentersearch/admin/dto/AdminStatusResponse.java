@@ -2,8 +2,17 @@ package com.themoa.youthcentersearch.admin.dto;
 
 public record AdminStatusResponse(
         String springBoot,
+        boolean secretConfigFileFound,
+        boolean youthCenterApiKeyConfigured,
+        boolean openAiApiKeyConfigured,
+        String springAiChatModel,
+        String springAiEmbeddingModel,
+        boolean chatModelAvailable,
+        boolean embeddingModelAvailable,
         boolean mysql,
+        boolean mysqlAvailable,
         boolean qdrant,
+        boolean qdrantAvailable,
         boolean openAiChatConfigured,
         boolean openAiEmbeddingConfigured,
         boolean ragEnabled,
@@ -14,6 +23,12 @@ public record AdminStatusResponse(
         long processingCount,
         long syncedCount,
         long failedCount,
-        Long qdrantDocumentCount
+        Long qdrantDocumentCount,
+        long nationwidePolicyCount,
+        long provincePolicyCount,
+        long cityPolicyCount,
+        long districtPolicyCount,
+        long multiplePolicyCount,
+        long unknownPolicyCount
 ) {
 }

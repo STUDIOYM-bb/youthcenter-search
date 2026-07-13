@@ -144,7 +144,9 @@ public class YouthCenterApiClient {
 
     private void ensureApiKey() {
         if (!StringUtils.hasText(properties.getCurrent().getApiKey())) {
-            throw new YouthCenterApiException("?⑦넻泥?뀈 API ?ㅺ? ?ㅼ젙?섏? ?딆븯?듬땲?? application-secret.yml??YOUTH_CENTER_API_KEY瑜??낅젰?섏꽭??");
+            throw new YouthCenterApiException("""
+                    온통청년 API Key가 설정되지 않았습니다.
+                    config/application-secret.yml의 YOUTH_CENTER_API_KEY를 입력하세요.""");
         }
     }
 

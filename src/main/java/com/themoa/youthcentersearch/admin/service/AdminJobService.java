@@ -2,6 +2,8 @@ package com.themoa.youthcentersearch.admin.service;
 
 import com.themoa.youthcentersearch.admin.dto.AdminJobStatus;
 import com.themoa.youthcentersearch.policy.service.PolicyCollectionResult;
+import com.themoa.youthcentersearch.policy.service.PolicyRegionRebuildResult;
+import com.themoa.youthcentersearch.policy.service.PolicyRegionRebuildService;
 import com.themoa.youthcentersearch.policy.service.YouthCenterPolicyCollectionService;
 import com.themoa.youthcentersearch.rag.service.EmbeddingProcessResult;
 import com.themoa.youthcentersearch.rag.service.EmbeddingQueueResult;
@@ -19,11 +21,14 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AdminJobService {
     private final YouthCenterPolicyCollectionService collectionService;
     private final PolicyEmbeddingService embeddingService;
+    private final PolicyRegionRebuildService regionRebuildService;
     private final Map<String, MutableJob> jobs = new ConcurrentHashMap<>();
 
-    public AdminJobService(YouthCenterPolicyCollectionService collectionService, PolicyEmbeddingService embeddingService) {
+    public AdminJobService(YouthCenterPolicyCollectionService collectionService, PolicyEmbeddingService embeddingService,
+                           PolicyRegionRebuildService regionRebuildService) {
         this.collectionService = collectionService;
         this.embeddingService = embeddingService;
+        this.regionRebuildService = regionRebuildService;
     }
 
     public AdminJobStatus start(String type) {
@@ -54,7 +59,13 @@ public class AdminJobService {
                     job.message = "QUEUE_COMPLETED";
                 }
                 case "EMBEDDING_PROCESS" -> {
-                    EmbeddingProcessResult result = embeddingService.processPending();
+                    EmbeddingProcessResult result = embeddingService.processPending(progress -> {
+                        job.processed = progress.processedCount();
+                        job.success = progress.successCount();
+                        job.failed = progress.failedCount();
+                        job.remaining = progress.pendingCountAfter();
+                        job.message = "EMBEDDING_PROCESSING";
+                    });
                     job.processed = result.processedCount();
                     job.success = result.successCount();
                     job.failed = result.failedCount();
@@ -65,6 +76,19 @@ public class AdminJobService {
                     int count = embeddingService.retryFailed();
                     job.success = count;
                     job.message = "FAILED_REQUEUED";
+                }
+                case "POLICY_REGION_REBUILD" -> {
+                    PolicyRegionRebuildResult result = regionRebuildService.rebuildAll();
+                    job.total = result.totalCount();
+                    job.processed = result.processedCount();
+                    job.success = result.changedCount();
+                    job.failed = result.failedCount();
+                    job.remaining = Math.max(0, result.totalCount() - result.processedCount());
+                    job.message = "REGION_REBUILD_COMPLETED changed=" + result.changedCount()
+                            + ", nationwideToRegion=" + result.nationwideToRegionCount()
+                            + ", nationwideToUnknown=" + result.nationwideToUnknownCount()
+                            + ", unchanged=" + result.unchangedCount()
+                            + ", pendingQueued=" + result.pendingQueuedCount();
                 }
                 case "FULL_REINDEX" -> {
                     PolicyCollectionResult collection = collectionService.collectAll();
