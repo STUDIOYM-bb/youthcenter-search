@@ -35,6 +35,7 @@ public class UserRegionTextResolver {
                 exact.add(region);
             }
         }
+        exact = logicalDistinct(exact);
         exact = removeCoveredProvinces(exact);
         if (exact.size() == 1) {
             return UserRegionResolution.of(UserRegionResolutionStatus.EXACT, exact.get(0));
@@ -56,7 +57,7 @@ public class UserRegionTextResolver {
                 aliasMatches.computeIfAbsent(alias, key -> new ArrayList<>()).add(region);
             }
         }
-        List<RegionCode> candidates = aliasMatches.values().stream().flatMap(List::stream).distinct().toList();
+        List<RegionCode> candidates = logicalDistinct(aliasMatches.values().stream().flatMap(List::stream).toList());
         if (candidates.size() == 1) {
             return UserRegionResolution.of(UserRegionResolutionStatus.UNIQUE_ALIAS, candidates.get(0));
         }
@@ -118,8 +119,31 @@ public class UserRegionTextResolver {
                 .collect(java.util.stream.Collectors.toSet());
         return candidates.stream()
                 .filter(region -> !"PROVINCE".equals(region.getRegionLevel()) || !provincesWithSpecific.contains(region.getProvince()))
-                .distinct()
-                .toList();
+                .collect(java.util.stream.Collectors.collectingAndThen(
+                        java.util.stream.Collectors.toMap(this::logicalKey, region -> region, this::choosePreferred, LinkedHashMap::new),
+                        map -> new ArrayList<>(map.values())));
+    }
+
+    private List<RegionCode> logicalDistinct(List<RegionCode> candidates) {
+        return new ArrayList<>(candidates.stream()
+                .collect(java.util.stream.Collectors.toMap(this::logicalKey, region -> region, this::choosePreferred, LinkedHashMap::new))
+                .values());
+    }
+
+    private RegionCode choosePreferred(RegionCode left, RegionCode right) {
+        if (standardInternalCode(right) && !standardInternalCode(left)) {
+            return right;
+        }
+        return left;
+    }
+
+    private boolean standardInternalCode(RegionCode region) {
+        String code = region.getRegionCode();
+        return "KR".equals(code) || code.startsWith("P:") || code.startsWith("M:");
+    }
+
+    private String logicalKey(RegionCode region) {
+        return region.getRegionLevel() + "|" + region.getProvince() + "|" + (region.getCity() == null ? "" : region.getCity());
     }
 
     private int specificity(RegionCode region) {
@@ -136,6 +160,7 @@ public class UserRegionTextResolver {
         if (!StringUtils.hasText(value)) {
             value = region.getProvince();
         }
-        return value.replaceAll("(특별자치도|특별자치시|특별시|광역시|시|군|구)$", "");
+        String alias = value.replaceAll("(특별자치도|특별자치시|특별시|광역시|시|군|구)$", "");
+        return alias.length() >= 2 ? alias : null;
     }
 }

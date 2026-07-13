@@ -69,7 +69,9 @@ public class RegionCode {
     }
 
     public boolean update(RegionCode parent, String province, String city, String regionLevel) {
-        boolean changed = this.parent != parent
+        Integer thisParentId = this.parent == null ? null : this.parent.getId();
+        Integer nextParentId = parent == null ? null : parent.getId();
+        boolean changed = !java.util.Objects.equals(thisParentId, nextParentId)
                 || !java.util.Objects.equals(this.province, province)
                 || !java.util.Objects.equals(this.city, city)
                 || !java.util.Objects.equals(this.regionLevel, regionLevel);

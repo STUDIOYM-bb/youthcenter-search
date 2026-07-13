@@ -20,6 +20,10 @@
         if (resolveBtn) {
             resolveBtn.addEventListener("click", resolveRegion);
         }
+        const refreshRegionCacheBtn = document.getElementById("refreshRegionCacheBtn");
+        if (refreshRegionCacheBtn) {
+            refreshRegionCacheBtn.addEventListener("click", refreshRegionCache);
+        }
         loadStatus();
         resumeLatestJob();
     });
@@ -83,6 +87,9 @@
             }
             if (job === "region-catalog-sync") {
                 endpoint = "/api/admin/jobs/region-catalog-sync";
+            }
+            if (job === "region-catalog-repair") {
+                endpoint = "/api/admin/jobs/region-catalog-repair";
             }
             const data = await api.post(endpoint, {});
             document.getElementById("adminRaw").textContent = JSON.stringify(data, null, 2);
@@ -209,6 +216,16 @@
                 "후보": Array.isArray(data.candidates) ? data.candidates.join(", ") : data.candidates
             });
             document.getElementById("adminRaw").textContent = JSON.stringify(data, null, 2);
+        } catch (error) {
+            showAlert(error.message, true);
+        }
+    }
+
+    async function refreshRegionCache() {
+        try {
+            hideAlert();
+            const data = await api.post("/api/admin/regions/cache/refresh", {});
+            showAlert(data, false);
         } catch (error) {
             showAlert(error.message, true);
         }

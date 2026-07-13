@@ -23,9 +23,13 @@ public class RegionSynchronizationState {
     }
 
     public void completed(RegionSynchronizationResult result) {
+        completed(result, "COMPLETED");
+    }
+
+    public void completed(RegionSynchronizationResult result, String status) {
         this.lastSyncTime = Instant.now();
         this.lastResult = result;
-        this.lastStatus = "COMPLETED";
+        this.lastStatus = status == null || status.isBlank() ? "COMPLETED" : status;
     }
 
     public void failed(String message) {

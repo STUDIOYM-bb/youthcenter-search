@@ -1,7 +1,9 @@
 package com.themoa.youthcentersearch.policy.region;
 
 import com.themoa.youthcentersearch.policy.domain.RegionCode;
+import com.themoa.youthcentersearch.policy.repository.RegionExternalCodeRepository;
 import com.themoa.youthcentersearch.policy.repository.RegionCodeRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -14,14 +16,22 @@ import java.util.Set;
 @Component
 public class RegionCatalog {
     private final RegionCodeRepository repository;
+    private final RegionExternalCodeRepository externalCodeRepository;
     private final RegionAliasCatalog aliases;
     private final RegionNormalizer normalizer;
     private volatile List<RegionCode> specificRegionsByLongestName;
 
-    public RegionCatalog(RegionCodeRepository repository, RegionAliasCatalog aliases, RegionNormalizer normalizer) {
+    @Autowired
+    public RegionCatalog(RegionCodeRepository repository, RegionExternalCodeRepository externalCodeRepository,
+                         RegionAliasCatalog aliases, RegionNormalizer normalizer) {
         this.repository = repository;
+        this.externalCodeRepository = externalCodeRepository;
         this.aliases = aliases;
         this.normalizer = normalizer;
+    }
+
+    public RegionCatalog(RegionCodeRepository repository, RegionAliasCatalog aliases, RegionNormalizer normalizer) {
+        this(repository, null, aliases, normalizer);
     }
 
     public Optional<RegionCode> nationwide() {
@@ -42,7 +52,11 @@ public class RegionCatalog {
         }
         for (String token : zipCd.split(",")) {
             String code = token.trim();
-            byCode(code).ifPresent(regions::add);
+            if (externalCodeRepository != null) {
+                externalCodeRepository.findByCodeSystemAndExternalCode("YOUTH_CENTER_ZIP", code)
+                        .map(external -> external.getRegion())
+                        .ifPresent(regions::add);
+            }
         }
         return regions;
     }

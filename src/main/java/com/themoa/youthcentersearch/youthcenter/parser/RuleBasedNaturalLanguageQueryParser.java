@@ -1,5 +1,6 @@
 package com.themoa.youthcentersearch.youthcenter.parser;
 
+import com.themoa.youthcentersearch.policy.region.UserRegionTextResolver;
 import com.themoa.youthcentersearch.youthcenter.dto.response.NaturalLanguageParseResult;
 import com.themoa.youthcentersearch.youthcenter.dto.response.NaturalLanguagePolicyCondition;
 import com.themoa.youthcentersearch.youthcenter.dto.response.ParserMode;
@@ -15,6 +16,11 @@ import java.util.regex.Pattern;
 @Component
 public class RuleBasedNaturalLanguageQueryParser implements NaturalLanguageQueryParser {
     private static final Pattern AGE_PATTERN = Pattern.compile("(\\d{1,2})\\s*(살|세)");
+    private final UserRegionTextResolver userRegionTextResolver;
+
+    public RuleBasedNaturalLanguageQueryParser(UserRegionTextResolver userRegionTextResolver) {
+        this.userRegionTextResolver = userRegionTextResolver;
+    }
 
     @Override
     public NaturalLanguageParseResult parse(String query) {
@@ -56,10 +62,8 @@ public class RuleBasedNaturalLanguageQueryParser implements NaturalLanguageQuery
     }
 
     private String region(String text) {
-        if (text.contains("수원")) return "수원시";
-        if (text.contains("경기도") || text.contains("경기")) return "경기도";
-        if (text.contains("서울")) return "서울시";
-        return null;
+        var resolved = userRegionTextResolver.resolve(text);
+        return resolved.resolved() ? resolved.regionName() : null;
     }
 
     private String employment(String text) {

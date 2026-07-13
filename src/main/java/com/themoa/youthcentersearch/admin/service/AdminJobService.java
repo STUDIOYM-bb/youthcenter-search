@@ -130,6 +130,20 @@ public class AdminJobService {
                             + ", unchanged=" + result.unchangedCount()
                             + ", failedProvinceCodes=" + result.failedProvinceCodes();
                 }
+                case "REGION_CATALOG_REPAIR" -> {
+                    job.update(new JobProgressUpdate("REPAIRING", "지역 카탈로그 복구 중", 0, 0, 0, 0, 0, 0, 0, 0, null, 0, 0, "SGIS 표준 지역을 다시 upsert합니다."));
+                    RegionSynchronizationResult result = regionSynchronizationService.synchronize(job::update);
+                    job.total = result.provinceReceivedCount();
+                    job.processed = result.provinceReceivedCount();
+                    job.success = result.insertedCount() + result.updatedCount() + result.unchangedCount();
+                    job.failed = result.failedCount();
+                    job.remaining = 0;
+                    job.message = "REGION_CATALOG_REPAIR_COMPLETED inserted=" + result.insertedCount()
+                            + ", updated=" + result.updatedCount()
+                            + ", unchanged=" + result.unchangedCount()
+                            + ", failedProvinceCodes=" + result.failedProvinceCodes()
+                            + ". 기존 FK 연결 지역은 삭제하지 않았습니다.";
+                }
                 case "FULL_REINDEX" -> {
                     PolicyCollectionResult collection = collectionService.collectAll(job::update);
                     EmbeddingQueueResult queue = embeddingService.queueAll(true, job::update);

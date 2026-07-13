@@ -10,6 +10,10 @@ import com.themoa.youthcentersearch.common.exception.YouthCenterApiException;
 import com.themoa.youthcentersearch.common.response.ApiResponse;
 import com.themoa.youthcentersearch.policy.region.UserRegionResolution;
 import com.themoa.youthcentersearch.policy.region.UserRegionTextResolver;
+import com.themoa.youthcentersearch.policy.region.RegionCatalog;
+import com.themoa.youthcentersearch.policy.repository.RegionCodeRepository;
+import com.themoa.youthcentersearch.policy.repository.RegionExternalCodeRepository;
+import com.themoa.youthcentersearch.policy.repository.RegionSyncRunRepository;
 import com.themoa.youthcentersearch.youthcenter.dto.response.YouthCenterProbeResponse;
 import com.themoa.youthcentersearch.youthcenter.service.YouthCenterDiagnosticService;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +34,10 @@ public class AdminController {
     private final YouthCenterDiagnosticService diagnosticService;
     private final AdminRegionDiagnosticsService regionDiagnosticsService;
     private final UserRegionTextResolver userRegionTextResolver;
+    private final RegionCatalog regionCatalog;
+    private final RegionCodeRepository regionCodeRepository;
+    private final RegionExternalCodeRepository externalCodeRepository;
+    private final RegionSyncRunRepository syncRunRepository;
     private final LocalSecretConfigurationStatus configurationStatus;
     private final String adminApiKey;
 
@@ -37,6 +45,10 @@ public class AdminController {
                            YouthCenterDiagnosticService diagnosticService,
                            AdminRegionDiagnosticsService regionDiagnosticsService,
                            UserRegionTextResolver userRegionTextResolver,
+                           RegionCatalog regionCatalog,
+                           RegionCodeRepository regionCodeRepository,
+                           RegionExternalCodeRepository externalCodeRepository,
+                           RegionSyncRunRepository syncRunRepository,
                            LocalSecretConfigurationStatus configurationStatus,
                            @Value("${app.admin-api-key:}") String adminApiKey) {
         this.statusService = statusService;
@@ -44,6 +56,10 @@ public class AdminController {
         this.diagnosticService = diagnosticService;
         this.regionDiagnosticsService = regionDiagnosticsService;
         this.userRegionTextResolver = userRegionTextResolver;
+        this.regionCatalog = regionCatalog;
+        this.regionCodeRepository = regionCodeRepository;
+        this.externalCodeRepository = externalCodeRepository;
+        this.syncRunRepository = syncRunRepository;
         this.configurationStatus = configurationStatus;
         this.adminApiKey = adminApiKey;
     }
@@ -96,6 +112,12 @@ public class AdminController {
         return ApiResponse.ok(jobService.start("REGION_CATALOG_SYNC"));
     }
 
+    @PostMapping("/jobs/region-catalog-repair")
+    public ApiResponse<AdminJobStatus> repairRegionCatalog(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
+        requireAdmin(key);
+        return ApiResponse.ok(jobService.start("REGION_CATALOG_REPAIR"));
+    }
+
     @PostMapping("/jobs/full-reindex")
     public ApiResponse<AdminJobStatus> fullReindex(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
         requireAdmin(key);
@@ -134,10 +156,74 @@ public class AdminController {
     }
 
     @GetMapping("/regions/resolve")
-    public ApiResponse<UserRegionResolution> resolveRegion(@RequestHeader(value = "X-Admin-Key", required = false) String key,
-                                                           @RequestParam("q") String query) {
+    public ApiResponse<java.util.Map<String, Object>> resolveRegion(@RequestHeader(value = "X-Admin-Key", required = false) String key,
+                                                                    @RequestParam("q") String query) {
         requireAdmin(key);
-        return ApiResponse.ok(userRegionTextResolver.resolve(query));
+        UserRegionResolution result = userRegionTextResolver.resolve(query);
+        java.util.List<java.util.Map<String, String>> externalCodes = java.util.List.of();
+        Integer regionId = null;
+        if (result.regionCode() != null) {
+            var region = regionCodeRepository.findByRegionCode(result.regionCode()).orElse(null);
+            if (region != null) {
+                regionId = region.getId();
+                externalCodes = externalCodeRepository.findByRegionId(region.getId()).stream()
+                        .map(code -> java.util.Map.of("codeSystem", code.getCodeSystem(), "externalCode", code.getExternalCode()))
+                        .toList();
+            }
+        }
+        java.util.Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("query", query);
+        response.put("status", result.status());
+        response.put("province", result.province());
+        response.put("city", result.city());
+        response.put("regionId", regionId);
+        response.put("internalCode", result.regionCode());
+        response.put("regionName", result.regionName());
+        response.put("externalCodes", externalCodes);
+        response.put("candidates", result.candidates());
+        return ApiResponse.ok(response);
+    }
+
+    @GetMapping("/regions/search")
+    public ApiResponse<java.util.List<java.util.Map<String, Object>>> searchRegions(
+            @RequestHeader(value = "X-Admin-Key", required = false) String key,
+            @RequestParam("name") String name) {
+        requireAdmin(key);
+        return ApiResponse.ok(regionCatalog.findInText(name).stream().map(region -> {
+            java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("regionId", region.getId());
+            item.put("internalCode", region.getRegionCode());
+            item.put("province", region.getProvince());
+            item.put("city", region.getCity());
+            item.put("level", region.getRegionLevel());
+            item.put("externalCodes", externalCodeRepository.findByRegionId(region.getId()).stream()
+                    .map(code -> java.util.Map.of("codeSystem", code.getCodeSystem(), "externalCode", code.getExternalCode()))
+                    .toList());
+            return item;
+        }).toList());
+    }
+
+    @GetMapping("/regions/coverage")
+    public ApiResponse<java.util.Map<String, Object>> regionCoverage(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
+        requireAdmin(key);
+        return ApiResponse.ok(java.util.Map.of(
+                "provinceCount", regionCodeRepository.countByRegionLevel("PROVINCE"),
+                "cityCount", regionCodeRepository.countByRegionLevel("CITY"),
+                "sgisExternalCodeCount", externalCodeRepository.countByCodeSystem("SGIS")
+        ));
+    }
+
+    @GetMapping("/regions/sync-runs/latest")
+    public ApiResponse<Object> latestRegionSyncRun(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
+        requireAdmin(key);
+        return ApiResponse.ok(syncRunRepository.findTopByOrderByStartedAtDesc().orElse(null));
+    }
+
+    @PostMapping("/regions/cache/refresh")
+    public ApiResponse<String> refreshRegionCache(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
+        requireAdmin(key);
+        regionCatalog.refreshCache();
+        return ApiResponse.ok("지역 카탈로그 캐시를 갱신했습니다.");
     }
 
     private void requireAdmin(String key) {

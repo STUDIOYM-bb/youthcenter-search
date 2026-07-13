@@ -1,9 +1,12 @@
 package com.themoa.youthcentersearch.policy.region;
 
 import com.themoa.youthcentersearch.policy.domain.RegionCode;
+import com.themoa.youthcentersearch.policy.domain.RegionExternalCode;
 import com.themoa.youthcentersearch.policy.repository.RegionCodeRepository;
+import com.themoa.youthcentersearch.policy.repository.RegionExternalCodeRepository;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -13,9 +16,10 @@ import static org.mockito.Mockito.when;
 
 class PolicyRegionResolverTest {
     private final RegionCodeRepository repository = repository();
+    private final RegionExternalCodeRepository externalCodeRepository = externalCodeRepository();
     private final RegionAliasCatalog aliases = new RegionAliasCatalog();
     private final RegionNormalizer normalizer = new RegionNormalizer(aliases);
-    private final RegionCatalog catalog = new RegionCatalog(repository, aliases, normalizer);
+    private final RegionCatalog catalog = new RegionCatalog(repository, externalCodeRepository, aliases, normalizer);
     private final PolicyRegionResolver resolver = new PolicyRegionResolver(catalog, new InstitutionRegionResolver(catalog));
 
     @Test
@@ -69,7 +73,7 @@ class PolicyRegionResolverTest {
     @Test
     void parsesZipCd() {
         assertThat(resolver.resolve(Map.of("zipCd", "41111,41113,41115,41117")).regionNames())
-                .contains("경기도 수원시 장안구", "경기도 수원시 영통구");
+                .containsExactly("경기도 수원시");
         assertThat(resolver.resolve(Map.of("zipCd", "not-a-code")).scope()).isEqualTo(RegionScope.UNKNOWN);
     }
 
@@ -82,6 +86,19 @@ class PolicyRegionResolverTest {
             when(repo.findByProvince(region.getProvince())).thenReturn(regions.stream().filter(r -> r.getProvince().equals(region.getProvince())).toList());
             when(repo.findByProvinceAndCity(region.getProvince(), region.getCity())).thenReturn(regions.stream()
                     .filter(r -> r.getProvince().equals(region.getProvince()) && java.util.Objects.equals(r.getCity(), region.getCity())).toList());
+        }
+        return repo;
+    }
+
+    private RegionExternalCodeRepository externalCodeRepository() {
+        RegionExternalCodeRepository repo = mock(RegionExternalCodeRepository.class);
+        RegionCode suwon = FakeRegionData.regions().stream()
+                .filter(region -> "경기도".equals(region.getProvince()) && "수원시".equals(region.getCity()))
+                .findFirst()
+                .orElseThrow();
+        for (String zipCd : List.of("41111", "41113", "41115", "41117")) {
+            when(repo.findByCodeSystemAndExternalCode("YOUTH_CENTER_ZIP", zipCd))
+                    .thenReturn(Optional.of(new RegionExternalCode(suwon, "YOUTH_CENTER_ZIP", zipCd)));
         }
         return repo;
     }

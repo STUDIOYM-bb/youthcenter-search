@@ -1,15 +1,18 @@
 package com.themoa.youthcentersearch.region.service;
 
 import com.themoa.youthcentersearch.policy.domain.RegionCode;
+import com.themoa.youthcentersearch.policy.domain.RegionSyncError;
+import com.themoa.youthcentersearch.policy.domain.RegionSyncRun;
 import com.themoa.youthcentersearch.policy.region.RegionCatalog;
-import com.themoa.youthcentersearch.policy.repository.RegionCodeRepository;
+import com.themoa.youthcentersearch.policy.repository.RegionExternalCodeRepository;
+import com.themoa.youthcentersearch.policy.repository.RegionSyncErrorRepository;
+import com.themoa.youthcentersearch.policy.repository.RegionSyncRunRepository;
 import com.themoa.youthcentersearch.admin.service.JobProgressUpdate;
 import com.themoa.youthcentersearch.region.config.RegionSyncProperties;
 import com.themoa.youthcentersearch.region.sgis.SgisApiException;
 import com.themoa.youthcentersearch.region.sgis.SgisRegionClient;
 import com.themoa.youthcentersearch.region.sgis.dto.SgisRegionItem;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -21,26 +24,32 @@ import java.util.function.Consumer;
 public class RegionSynchronizationService {
     private final RegionSyncProperties properties;
     private final SgisRegionClient regionClient;
-    private final RegionCodeRepository regionCodeRepository;
     private final RegionCatalog regionCatalog;
     private final RegionSynchronizationState state;
-    private final TransactionTemplate transactionTemplate;
     private final MunicipalityHierarchyResolver hierarchyResolver;
+    private final RegionProvincePersistenceService persistenceService;
+    private final RegionSyncRunRepository syncRunRepository;
+    private final RegionSyncErrorRepository syncErrorRepository;
+    private final RegionExternalCodeRepository externalCodeRepository;
 
     public RegionSynchronizationService(RegionSyncProperties properties,
                                         SgisRegionClient regionClient,
-                                        RegionCodeRepository regionCodeRepository,
                                         RegionCatalog regionCatalog,
                                         RegionSynchronizationState state,
-                                        TransactionTemplate transactionTemplate,
-                                        MunicipalityHierarchyResolver hierarchyResolver) {
+                                        MunicipalityHierarchyResolver hierarchyResolver,
+                                        RegionProvincePersistenceService persistenceService,
+                                        RegionSyncRunRepository syncRunRepository,
+                                        RegionSyncErrorRepository syncErrorRepository,
+                                        RegionExternalCodeRepository externalCodeRepository) {
         this.properties = properties;
         this.regionClient = regionClient;
-        this.regionCodeRepository = regionCodeRepository;
         this.regionCatalog = regionCatalog;
         this.state = state;
-        this.transactionTemplate = transactionTemplate;
         this.hierarchyResolver = hierarchyResolver;
+        this.persistenceService = persistenceService;
+        this.syncRunRepository = syncRunRepository;
+        this.syncErrorRepository = syncErrorRepository;
+        this.externalCodeRepository = externalCodeRepository;
     }
 
     public RegionSynchronizationResult synchronize() {
@@ -64,11 +73,14 @@ public class RegionSynchronizationService {
             throw new SgisApiException("SGIS 인증 정보가 설정되지 않았습니다.");
         }
         Instant startedAt = Instant.now();
+        RegionSyncRun run = syncRunRepository.save(RegionSyncRun.start());
         List<String> failedProvinceCodes = new ArrayList<>();
         notify(progressConsumer, new JobProgressUpdate("AUTHENTICATING", "SGIS 인증 중", 0, 0, 0, 0, 0, 0, 0, 0, null, 0, 0, "SGIS 인증 중입니다."));
         List<SgisRegionItem> provinces = regionClient.fetchProvinces();
         Counter counter = new Counter();
         counter.provinceReceived = provinces.size();
+        run.provinceCount(provinces.size());
+        syncRunRepository.save(run);
 
         int processedProvince = 0;
         int successProvince = 0;
@@ -77,9 +89,20 @@ public class RegionSynchronizationService {
                 counter.failed++;
                 continue;
             }
-            RegionCode savedProvince = transactionTemplate.execute(status ->
-                    upsert(null, province.cd(), province.addrName(), null, "PROVINCE", counter));
+            RegionCode savedProvince;
             try {
+                var persisted = persistenceService.upsertProvince(province.cd(), province.addrName());
+                savedProvince = persisted.region();
+                counter.add(persisted);
+            } catch (RuntimeException ex) {
+                counter.failed++;
+                failedProvinceCodes.add(province.cd());
+                syncErrorRepository.save(new RegionSyncError(run, province.cd(), province.addrName(), ex.getClass().getSimpleName(), ex.getMessage(), 0));
+                continue;
+            }
+            try {
+                run.current(province.cd(), province.addrName(), processedProvince);
+                syncRunRepository.save(run);
                 notify(progressConsumer, new JobProgressUpdate("SYNCING_CHILDREN", "시·군 동기화 중", provinces.size(), processedProvince,
                         successProvince, counter.failed, 0, 0, 0, 0, province.addrName(), 0, 0, province.addrName() + " 하위 지역 동기화 중"));
                 sleep();
@@ -94,14 +117,13 @@ public class RegionSynchronizationService {
                     if (!normalized.supported()) {
                         continue;
                     }
-                    transactionTemplate.execute(status -> {
-                        upsertMunicipality(savedProvince, normalized, counter);
-                        return null;
-                    });
+                    var persisted = persistenceService.upsertMunicipality(savedProvince, normalized);
+                    counter.add(persisted);
                 }
             } catch (RuntimeException ex) {
                 counter.failed++;
                 failedProvinceCodes.add(province.cd());
+                syncErrorRepository.save(new RegionSyncError(run, province.cd(), province.addrName(), ex.getClass().getSimpleName(), ex.getMessage(), 0));
             }
             processedProvince++;
             if (!failedProvinceCodes.contains(province.cd())) {
@@ -114,6 +136,10 @@ public class RegionSynchronizationService {
         notify(progressConsumer, new JobProgressUpdate("REFRESHING_CACHE", "지역 캐시 갱신 중", provinces.size(), provinces.size(),
                 successProvince, counter.failed, 0, 0, 0, 0, null, 0, 0, "지역 캐시를 갱신합니다."));
         regionCatalog.refreshCache();
+        run.counts(counter.childReceived, counter.inserted, counter.updated, counter.unchanged, counter.failed);
+        String status = counter.failed == 0 ? "COMPLETED" : successProvince == 0 ? "FAILED" : "COMPLETED_WITH_ERRORS";
+        run.complete(status, failedProvinceCodes.isEmpty() ? null : "failedProvinceCodes=" + failedProvinceCodes);
+        syncRunRepository.save(run);
         RegionSynchronizationResult result = new RegionSynchronizationResult(
                 counter.provinceReceived,
                 counter.childReceived,
@@ -124,35 +150,8 @@ public class RegionSynchronizationService {
                 List.copyOf(failedProvinceCodes),
                 Duration.between(startedAt, Instant.now()).toMillis()
         );
-        state.completed(result);
+        state.completed(result, status);
         return result;
-    }
-
-    private RegionCode upsert(RegionCode parent, String code, String province, String city, String level, Counter counter) {
-        return regionCodeRepository.findByRegionCode(code)
-                .map(existing -> {
-                    if (existing.update(parent, province, city, level)) {
-                        counter.updated++;
-                    } else {
-                        counter.unchanged++;
-                    }
-                    return existing;
-                })
-                .orElseGet(() -> {
-                    counter.inserted++;
-                    return regionCodeRepository.save(new RegionCode(parent, code, province, city, level));
-                });
-    }
-
-    private RegionCode upsertMunicipality(RegionCode parent, NormalizedMunicipality normalized, Counter counter) {
-        return regionCodeRepository.findByProvinceAndCity(normalized.provinceName(), normalized.municipalityName()).stream()
-                .filter(region -> "CITY".equals(region.getRegionLevel()))
-                .findFirst()
-                .map(existing -> {
-                    counter.unchanged++;
-                    return existing;
-                })
-                .orElseGet(() -> upsert(parent, normalized.sourceCode(), normalized.provinceName(), normalized.municipalityName(), "CITY", counter));
     }
 
     private void sleep() {
@@ -180,5 +179,11 @@ public class RegionSynchronizationService {
         int updated;
         int unchanged;
         int failed;
+
+        void add(RegionProvincePersistenceService.PersistedRegion persisted) {
+            inserted += persisted.inserted();
+            updated += persisted.updated();
+            unchanged += persisted.unchanged();
+        }
     }
 }
