@@ -6,6 +6,7 @@ import com.themoa.youthcentersearch.admin.service.JobProgressUpdate;
 import com.themoa.youthcentersearch.policy.domain.Policy;
 import com.themoa.youthcentersearch.policy.domain.PolicyEmbeddingSync;
 import com.themoa.youthcentersearch.policy.domain.PolicyRegion;
+import com.themoa.youthcentersearch.policy.region.PolicyGeographyClassifier;
 import com.themoa.youthcentersearch.policy.region.PolicyRegionResolver;
 import com.themoa.youthcentersearch.policy.repository.PolicyEmbeddingSyncRepository;
 import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
@@ -36,6 +37,8 @@ public class PolicyRegionRebuildService {
     private final TransactionTemplate transactionTemplate;
     private final PolicySourceSnapshotRepository snapshotRepository;
     private final ObjectMapper objectMapper;
+    private final PolicyGeographyClassifier geographyClassifier;
+    private final PolicyRegionClassificationStore classificationStore;
 
     public PolicyRegionRebuildService(PolicyRepository policyRepository,
                                       PolicyRegionResolver regionResolver,
@@ -45,7 +48,9 @@ public class PolicyRegionRebuildService {
                                       RegionRebuildProperties properties,
                                       TransactionTemplate transactionTemplate,
                                       PolicySourceSnapshotRepository snapshotRepository,
-                                      ObjectMapper objectMapper) {
+                                      ObjectMapper objectMapper,
+                                      PolicyGeographyClassifier geographyClassifier,
+                                      PolicyRegionClassificationStore classificationStore) {
         this.policyRepository = policyRepository;
         this.regionResolver = regionResolver;
         this.regionSyncService = regionSyncService;
@@ -55,6 +60,8 @@ public class PolicyRegionRebuildService {
         this.transactionTemplate = transactionTemplate;
         this.snapshotRepository = snapshotRepository;
         this.objectMapper = objectMapper;
+        this.geographyClassifier = geographyClassifier;
+        this.classificationStore = classificationStore;
     }
 
     public PolicyRegionRebuildResult rebuildAll() {
@@ -121,7 +128,9 @@ public class PolicyRegionRebuildService {
                     .collect(Collectors.toSet());
             boolean wasNationwide = before.contains("KR");
             FieldSource fieldSource = fields(policy);
-            var resolution = regionResolver.resolve(fieldSource.fields());
+            var classification = geographyClassifier.classify(fieldSource.fields());
+            classificationStore.save(policy, classification);
+            var resolution = classification.toResolution();
             var syncResult = regionSyncService.syncRegions(policy, resolution);
             boolean queued = false;
             if (syncResult.changed() && properties.isEnqueueChangedPolicies()) {

@@ -1,45 +1,47 @@
 package com.themoa.youthcentersearch.policy.region;
 
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Component
 public class RegionAliasCatalog {
-    private final Map<String, String> provinceAliases = new LinkedHashMap<>();
+    private final RegionNameAliasGenerator aliasGenerator;
+
+    public RegionAliasCatalog(RegionNameAliasGenerator aliasGenerator) {
+        this.aliasGenerator = aliasGenerator;
+    }
 
     public RegionAliasCatalog() {
-        provinceAliases.put("서울시", "서울특별시");
-        provinceAliases.put("서울", "서울특별시");
-        provinceAliases.put("부산", "부산광역시");
-        provinceAliases.put("대구", "대구광역시");
-        provinceAliases.put("인천", "인천광역시");
-        provinceAliases.put("광주", "광주광역시");
-        provinceAliases.put("대전", "대전광역시");
-        provinceAliases.put("울산", "울산광역시");
-        provinceAliases.put("세종", "세종특별자치시");
-        provinceAliases.put("경기", "경기도");
-        provinceAliases.put("강원", "강원특별자치도");
-        provinceAliases.put("충북", "충청북도");
-        provinceAliases.put("충남", "충청남도");
-        provinceAliases.put("전북", "전북특별자치도");
-        provinceAliases.put("전남", "전라남도");
-        provinceAliases.put("경북", "경상북도");
-        provinceAliases.put("경남", "경상남도");
-        provinceAliases.put("제주도", "제주특별자치도");
-        provinceAliases.put("제주", "제주특별자치도");
+        this(new RegionNameAliasGenerator());
     }
 
     public String province(String value) {
         if (value == null) {
             return null;
         }
-        String trimmed = value.trim();
-        return provinceAliases.getOrDefault(trimmed, trimmed);
+        return value.trim();
     }
 
-    public Map<String, String> provinceAliases() {
-        return provinceAliases;
+    public Set<String> aliasesForProvince(String officialName) {
+        if (!StringUtils.hasText(officialName)) {
+            return new LinkedHashSet<>();
+        }
+        return aliasGenerator.aliasesForSido(new com.themoa.youthcentersearch.policy.domain.RegionCode(null, "", officialName, null, "PROVINCE"));
+    }
+
+    public Set<String> aliasesForMunicipality(String provinceName, String municipalityName) {
+        if (!StringUtils.hasText(municipalityName)) {
+            return new LinkedHashSet<>();
+        }
+        var sido = new com.themoa.youthcentersearch.policy.domain.RegionCode(null, "", provinceName, null, "PROVINCE");
+        var sigungu = new com.themoa.youthcentersearch.policy.domain.RegionCode(null, "", provinceName, municipalityName, "CITY");
+        return aliasGenerator.aliasesForSigungu(sido, sigungu);
+    }
+
+    public String shortAlias(String value) {
+        return aliasGenerator.shortAlias(value);
     }
 }

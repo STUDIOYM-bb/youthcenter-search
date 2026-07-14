@@ -1,0 +1,18 @@
+package com.themoa.youthcentersearch.rag.dto;
+
+public enum CandidateSource {
+    VECTOR_ORIGINAL_QUERY,
+    VECTOR_INTENT_QUERY,
+    VECTOR_EXPANDED_QUERY,
+    VECTOR_CATEGORY_QUERY,
+    EXACT_TITLE,
+    TITLE_PHRASE,
+    LEXICAL_INDEX,
+    CATEGORY_SIGNAL,
+    BROAD_ELIGIBLE_POOL,
+    MYSQL_TITLE,
+    MYSQL_KEYWORD,
+    MYSQL_SUMMARY,
+    MYSQL_CATEGORY,
+    MYSQL_FALLBACK
+}

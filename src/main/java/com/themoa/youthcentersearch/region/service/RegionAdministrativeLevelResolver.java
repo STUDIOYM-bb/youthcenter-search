@@ -5,11 +5,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class RegionAdministrativeLevelResolver {
     public boolean isProvinceUnitOnly(String provinceName) {
-        return provinceName != null && provinceName.contains("세종");
+        return provinceName != null && provinceName.endsWith("특별자치시");
     }
 
     public boolean isProvinceLike(String provinceName) {
-        return provinceName != null && (provinceName.endsWith("도") || provinceName.contains("특별자치도"));
+        return provinceName != null && provinceName.endsWith("도");
     }
 
     public boolean isMetropolitanLike(String provinceName) {

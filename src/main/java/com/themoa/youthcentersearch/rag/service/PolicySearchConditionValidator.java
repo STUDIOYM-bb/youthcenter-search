@@ -44,6 +44,8 @@ public class PolicySearchConditionValidator {
         return new PolicySearchCondition(province, city, district, age, employment, student,
                 parsed == null ? null : parsed.careerStage(), category, supportTypes, keywords.coreKeywords(),
                 keywords.expandedKeywords(), resolvedRegion.regionName(), resolvedRegion.status().name(),
+                resolvedRegion.regionLevel() == null ? null : resolvedRegion.regionLevel().name(),
+                java.util.Set.copyOf(resolvedRegion.candidates()),
                 regionExplicit, ageExplicit, employmentExplicit, studentExplicit,
                 categoryExplicit, supportTypeExplicit, mode, resultSize);
     }

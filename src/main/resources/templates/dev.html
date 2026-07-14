@@ -49,6 +49,8 @@
             <button data-job="embedding-retry-failed" type="button">FAILED 임베딩 재시도</button>
             <button data-job="full-reindex" type="button">전체 수집 후 전체 재인덱싱</button>
             <button data-job="qdrant-search" type="button" class="secondary">Qdrant Vector 검색</button>
+            <button data-job="search-quality-suite" type="button" class="secondary">검색 품질 Suite</button>
+            <button data-job="region-quality-suite" type="button" class="secondary">전국 시·군 지역 검색 Suite</button>
         </div>
     </section>
 
@@ -62,6 +64,26 @@
             <button id="resolveRegionBtn" type="button">지역 해석</button>
         </div>
         <div id="regionResolveResult" class="summary-grid"></div>
+    </section>
+
+    <section class="card">
+        <h2>정책 미노출 원인 분석</h2>
+        <label class="field">
+            <span>검색 문장</span>
+            <input id="explainQueryInput" type="text" placeholder="수원 사는 27살 취준생 정책">
+        </label>
+        <label class="field">
+            <span>정책 ID</span>
+            <input id="explainPolicyIdInput" type="number" min="1" placeholder="123">
+        </label>
+        <label class="field">
+            <span>Source Policy ID</span>
+            <input id="explainSourcePolicyIdInput" type="text" placeholder="선택 입력">
+        </label>
+        <div class="button-row">
+            <button id="explainSearchBtn" type="button">미노출 원인 분석</button>
+        </div>
+        <div id="searchExplainResult" class="summary-grid"></div>
     </section>
 
     <section class="card">

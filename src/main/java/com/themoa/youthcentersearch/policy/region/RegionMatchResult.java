@@ -1,11 +1,17 @@
 package com.themoa.youthcentersearch.policy.region;
 
 public record RegionMatchResult(
-        RegionMatchStatus status,
+        RegionCompatibility compatibility,
+        boolean eligible,
         int score,
-        String description
+        String reason
 ) {
     public boolean hardFiltered(boolean includeUnknown) {
-        return status == RegionMatchStatus.NOT_MATCHED || (!includeUnknown && status == RegionMatchStatus.UNKNOWN);
+        return compatibility == RegionCompatibility.NOT_MATCHED
+                || (!includeUnknown && compatibility == RegionCompatibility.UNKNOWN);
+    }
+
+    public String label() {
+        return compatibility.label();
     }
 }

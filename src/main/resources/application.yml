@@ -121,6 +121,8 @@ app:
       retry-top-k: ${RAG_SEARCH_RETRY_TOP_K:150}
       result-size: ${RAG_SEARCH_RESULT_SIZE:20}
       minimum-similarity: ${RAG_MINIMUM_SIMILARITY:0.55}
+      minimum-topic-relevance: ${RAG_MINIMUM_TOPIC_RELEVANCE:0.25}
+      region-specificity-tie-window: ${RAG_REGION_SPECIFICITY_TIE_WINDOW:0.05}
       include-unknown-region: ${RAG_INCLUDE_UNKNOWN_REGION:false}
       mysql-fallback-enabled: ${RAG_MYSQL_FALLBACK_ENABLED:true}
 

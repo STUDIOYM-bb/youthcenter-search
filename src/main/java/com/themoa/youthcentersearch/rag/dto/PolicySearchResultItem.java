@@ -24,6 +24,18 @@ public record PolicySearchResultItem(
         double semanticScore,
         double finalScore,
         List<String> matchedReasons,
-        List<String> needCheckReasons
+        List<String> needCheckReasons,
+        String regionCompatibility,
+        String regionMatchLabel,
+        String regionMatchReason,
+        int regionScore,
+        List<String> candidateSources,
+        String ageMatchStatus,
+        String ageMatchReason,
+        String employmentMatchStatus,
+        String employmentMatchReason,
+        String studentMatchStatus,
+        String studentMatchReason,
+        double topicScore
 ) {
 }

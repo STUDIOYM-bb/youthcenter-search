@@ -3,6 +3,7 @@ package com.themoa.youthcentersearch.policy.region;
 import com.themoa.youthcentersearch.policy.domain.RegionCode;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -22,13 +23,28 @@ public class PolicyRegionResolver {
 
     private final RegionCatalog catalog;
     private final InstitutionRegionResolver institutionResolver;
+    private final PolicyGeographyClassifier geographyClassifier;
 
-    public PolicyRegionResolver(RegionCatalog catalog, InstitutionRegionResolver institutionResolver) {
+    @Autowired
+    public PolicyRegionResolver(RegionCatalog catalog, InstitutionRegionResolver institutionResolver,
+                                PolicyGeographyClassifier geographyClassifier) {
         this.catalog = catalog;
         this.institutionResolver = institutionResolver;
+        this.geographyClassifier = geographyClassifier;
+    }
+
+    public PolicyRegionResolver(RegionCatalog catalog, InstitutionRegionResolver institutionResolver) {
+        this(catalog, institutionResolver, new PolicyGeographyClassifier(catalog,
+                new StrictPolicyRegionMentionExtractor(catalog, new RegionNameAliasGenerator(),
+                        new RegionNormalizer(new RegionAliasCatalog())),
+                institutionResolver));
     }
 
     public PolicyRegionResolution resolve(Map<String, Object> fields) {
+        return geographyClassifier.classify(fields).toResolution();
+    }
+
+    public PolicyRegionResolution resolveLegacy(Map<String, Object> fields) {
         List<RegionEvidence> evidence = new ArrayList<>();
 
         Set<RegionCode> title = match(RegionEvidenceSource.POLICY_TITLE, text(fields, "plcyNm", "title"), 100, evidence);

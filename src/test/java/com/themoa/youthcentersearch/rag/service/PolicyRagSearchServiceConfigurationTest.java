@@ -23,7 +23,8 @@ class PolicyRagSearchServiceConfigurationTest {
                 vectorStoreProvider,
                 new RagProperties(),
                 mock(RegionMatchEvaluator.class),
-                mock(PolicyLexicalSearchService.class));
+                mock(PolicyLexicalSearchService.class),
+                mock(PolicySearchIntentBuilder.class));
 
         assertThatThrownBy(() -> service.search(new PolicySearchRequest("청년 지원금", null)))
                 .isInstanceOf(YouthCenterApiException.class)

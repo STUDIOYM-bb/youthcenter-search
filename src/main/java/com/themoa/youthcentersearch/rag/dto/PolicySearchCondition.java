@@ -16,6 +16,8 @@ public record PolicySearchCondition(
         Set<String> expandedKeywords,
         String rawRegionText,
         String regionResolutionStatus,
+        String regionLevel,
+        Set<String> regionCandidates,
         boolean regionExplicit,
         boolean ageExplicit,
         boolean employmentExplicit,
@@ -37,7 +39,7 @@ public record PolicySearchCondition(
                                  Set<String> keywords,
                                  Integer resultSize) {
         this(province, city, district, age, employmentStatus, studentStatus, careerStage, category,
-                supportTypes, keywords, Set.of(), null, null, false, false, false, false, false, false,
+                supportTypes, keywords, Set.of(), null, null, null, Set.of(), false, false, false, false, false, false,
                 PolicySearchMode.KEYWORD, resultSize);
     }
 
@@ -50,6 +52,7 @@ public record PolicySearchCondition(
         category = blankToNull(category);
         rawRegionText = blankToNull(rawRegionText);
         regionResolutionStatus = blankToNull(regionResolutionStatus);
+        regionLevel = blankToNull(regionLevel);
         if (age != null && age <= 0) {
             age = null;
         }
@@ -59,6 +62,7 @@ public record PolicySearchCondition(
         supportTypes = supportTypes == null ? Set.of() : Set.copyOf(supportTypes);
         keywords = keywords == null ? Set.of() : Set.copyOf(keywords);
         expandedKeywords = expandedKeywords == null ? Set.of() : Set.copyOf(expandedKeywords);
+        regionCandidates = regionCandidates == null ? Set.of() : Set.copyOf(regionCandidates);
         searchMode = searchMode == null ? PolicySearchMode.KEYWORD : searchMode;
     }
 

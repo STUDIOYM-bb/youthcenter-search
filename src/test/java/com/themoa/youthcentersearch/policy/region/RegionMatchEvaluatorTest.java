@@ -21,21 +21,73 @@ class RegionMatchEvaluatorTest {
     private final RegionMatchEvaluator evaluator = new RegionMatchEvaluator(catalog, normalizer);
 
     @Test
-    void evaluatesSuwonUserAgainstPolicyRegions() {
+    void sigunguSearchAllowsExactParentSidoNationwideAndMatchingMultipleOnly() {
         ResolvedUserRegion user = evaluator.resolveUserRegion("경기도", "수원시", null);
 
-        assertThat(evaluator.evaluate(policy(region("41110")), user).status()).isEqualTo(RegionMatchStatus.EXACT_CITY);
-        assertThat(evaluator.evaluate(policy(region("41117")), user).status()).isEqualTo(RegionMatchStatus.EXACT_CITY);
-        assertThat(evaluator.evaluate(policy(region("41")), user).status()).isEqualTo(RegionMatchStatus.PROVINCE_MATCH);
-        assertThat(evaluator.evaluate(policy(region("KR")), user).status()).isEqualTo(RegionMatchStatus.NATIONWIDE);
-        assertThat(evaluator.evaluate(policy(region("11")), user).status()).isEqualTo(RegionMatchStatus.NOT_MATCHED);
-        assertThat(evaluator.evaluate(policy(region("41130")), user).status()).isEqualTo(RegionMatchStatus.NOT_MATCHED);
-        assertThat(evaluator.evaluate(policy(region("41220")), user).status()).isEqualTo(RegionMatchStatus.NOT_MATCHED);
-        assertThat(evaluator.evaluate(policy(region("41410")), user).status()).isEqualTo(RegionMatchStatus.NOT_MATCHED);
-        assertThat(evaluator.evaluate(policy(region("41460")), user).status()).isEqualTo(RegionMatchStatus.NOT_MATCHED);
-        assertThat(evaluator.evaluate(policy(region("28177")), user).status()).isEqualTo(RegionMatchStatus.NOT_MATCHED);
-        assertThat(evaluator.evaluate(policy(region("28237")), user).status()).isEqualTo(RegionMatchStatus.NOT_MATCHED);
-        assertThat(evaluator.evaluate(policy(), user).status()).isEqualTo(RegionMatchStatus.UNKNOWN);
+        assertMatch(policy(region("41110")), user, RegionCompatibility.EXACT_SIGUNGU, true, 100);
+        assertMatch(policy(region("41")), user, RegionCompatibility.PARENT_SIDO, true, 100);
+        assertMatch(policy(region("KR")), user, RegionCompatibility.NATIONWIDE, true, 100);
+        assertMatch(policy(region("41110"), region("41130")), user, RegionCompatibility.MULTIPLE_REGION_MATCH, true, 100);
+        assertMatch(policy(region("41"), region("11")), user, RegionCompatibility.MULTIPLE_REGION_MATCH, true, 100);
+
+        assertMatch(policy(region("41130")), user, RegionCompatibility.NOT_MATCHED, false, 0);
+        assertMatch(policy(region("11")), user, RegionCompatibility.NOT_MATCHED, false, 0);
+        assertMatch(policy(region("28177")), user, RegionCompatibility.NOT_MATCHED, false, 0);
+        assertMatch(policy(), user, RegionCompatibility.UNKNOWN, false, 0);
+    }
+
+    @Test
+    void sidoSearchAllowsSidoNationwideAndMatchingMultipleButNotChildOnlyPolicies() {
+        ResolvedUserRegion user = evaluator.resolveUserRegion("경기도", null, null);
+
+        assertMatch(policy(region("41")), user, RegionCompatibility.EXACT_SIDO, true, 100);
+        assertMatch(policy(region("KR")), user, RegionCompatibility.NATIONWIDE, true, 100);
+        assertMatch(policy(region("41"), region("11")), user, RegionCompatibility.MULTIPLE_REGION_MATCH, true, 100);
+
+        assertMatch(policy(region("41110")), user, RegionCompatibility.NOT_MATCHED, false, 0);
+        assertMatch(policy(region("41130")), user, RegionCompatibility.NOT_MATCHED, false, 0);
+        assertMatch(policy(region("11")), user, RegionCompatibility.NOT_MATCHED, false, 0);
+    }
+
+    @Test
+    void metropolitanAutonomousDistrictSearchIncludesParentMetropolitanSidoAndNationwide() {
+        ResolvedUserRegion user = evaluator.resolveUserRegion("인천광역시", "부평구", null);
+
+        assertMatch(policy(region("28237")), user, RegionCompatibility.EXACT_SIGUNGU, true, 100);
+        assertMatch(policy(region("28")), user, RegionCompatibility.PARENT_SIDO, true, 100);
+        assertMatch(policy(region("KR")), user, RegionCompatibility.NATIONWIDE, true, 100);
+
+        assertMatch(policy(region("28200")), user, RegionCompatibility.NOT_MATCHED, false, 0);
+        assertMatch(policy(region("26")), user, RegionCompatibility.NOT_MATCHED, false, 0);
+    }
+
+    @Test
+    void explicitNationwideSearchAllowsOnlyNationwidePolicies() {
+        ResolvedUserRegion user = evaluator.resolveUserRegion("전국", null, null, SearchRegionLevel.NATIONWIDE.name());
+
+        assertMatch(policy(region("KR")), user, RegionCompatibility.NATIONWIDE, true, 100);
+        assertMatch(policy(region("41")), user, RegionCompatibility.NOT_MATCHED, false, 0);
+        assertMatch(policy(region("41110")), user, RegionCompatibility.NOT_MATCHED, false, 0);
+    }
+
+    @Test
+    void noRegionSearchDoesNotApplyRegionEligibility() {
+        ResolvedUserRegion user = evaluator.resolveUserRegion(null, null, null);
+
+        RegionMatchResult result = evaluator.evaluate(policy(region("41110")), user);
+
+        assertThat(result.compatibility()).isEqualTo(RegionCompatibility.UNKNOWN);
+        assertThat(result.eligible()).isTrue();
+        assertThat(result.score()).isZero();
+    }
+
+    private void assertMatch(Policy policy, ResolvedUserRegion user, RegionCompatibility compatibility,
+                             boolean eligible, int score) {
+        RegionMatchResult result = evaluator.evaluate(policy, user);
+
+        assertThat(result.compatibility()).isEqualTo(compatibility);
+        assertThat(result.eligible()).isEqualTo(eligible);
+        assertThat(result.score()).isEqualTo(score);
     }
 
     private Policy policy(RegionCode... regions) {

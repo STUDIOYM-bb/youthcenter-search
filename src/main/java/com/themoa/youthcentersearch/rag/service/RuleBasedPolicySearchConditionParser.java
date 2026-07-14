@@ -56,7 +56,7 @@ public class RuleBasedPolicySearchConditionParser {
         if (containsAny(text, "월세", "주거")) category = "주거";
         if (containsAny(text, "면접", "취업", "구직")) category = "일자리";
         if (containsAny(text, "교육", "훈련")) category = "교육";
-        if (containsAny(text, "자산", "저축", "지원금", "수당")) category = "금융";
+        if (containsAny(text, "자산", "저축", "계좌", "통장", "지원금", "수당")) category = "금융";
         add(text, keywords, "청년", "청년");
         add(text, keywords, "지원금", "지원금", "청년");
         add(text, keywords, "수당", "수당", "청년");
@@ -65,6 +65,9 @@ public class RuleBasedPolicySearchConditionParser {
         add(text, keywords, "월세", "월세", "주거");
         add(text, keywords, "생활비", "생활비");
         add(text, keywords, "자산", "자산형성", "저축");
+        add(text, keywords, "계좌", "계좌", "저축", "자산형성");
+        add(text, keywords, "통장", "통장", "저축", "자산형성");
+        add(text, keywords, "저축", "저축", "계좌", "통장", "자산형성");
         if (containsAny(text, "지원금", "수당", "보조금")) {
             supportTypes.add("CASH");
             supportTypes.add("ALLOWANCE");
@@ -75,6 +78,8 @@ public class RuleBasedPolicySearchConditionParser {
         }
         return new PolicySearchCondition(province, city, null, age, employment, student, null, category,
                 supportTypes, keywords, Set.of(), rawRegionText, regionResolutionStatus,
+                region.regionLevel() == null ? null : region.regionLevel().name(),
+                Set.copyOf(region.candidates()),
                 false, false, false, false, false, false, null, resultSize);
     }
 

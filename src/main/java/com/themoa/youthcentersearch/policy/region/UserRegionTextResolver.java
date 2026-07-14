@@ -1,6 +1,7 @@
 package com.themoa.youthcentersearch.policy.region;
 
 import com.themoa.youthcentersearch.policy.domain.RegionCode;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -9,17 +10,23 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class UserRegionTextResolver {
     private final RegionCatalog regionCatalog;
-    private final RegionAliasCatalog aliases;
+    private final RegionNameAliasGenerator aliasGenerator;
     private final RegionNormalizer normalizer;
 
-    public UserRegionTextResolver(RegionCatalog regionCatalog, RegionAliasCatalog aliases, RegionNormalizer normalizer) {
+    @Autowired
+    public UserRegionTextResolver(RegionCatalog regionCatalog, RegionNameAliasGenerator aliasGenerator, RegionNormalizer normalizer) {
         this.regionCatalog = regionCatalog;
-        this.aliases = aliases;
+        this.aliasGenerator = aliasGenerator;
         this.normalizer = normalizer;
+    }
+
+    public UserRegionTextResolver(RegionCatalog regionCatalog, RegionAliasCatalog aliases, RegionNormalizer normalizer) {
+        this(regionCatalog, new RegionNameAliasGenerator(), normalizer);
     }
 
     public UserRegionResolution resolve(String text) {
@@ -27,107 +34,172 @@ public class UserRegionTextResolver {
             return UserRegionResolution.notFound();
         }
         String compact = normalizer.compact(text);
+        String nationwideMatch = nationwideMatch(compact);
+        if (nationwideMatch != null) {
+            return UserRegionResolution.nationwide(text.trim(), regionCatalog.nationwide().orElse(null), nationwideMatch);
+        }
         List<RegionCode> regions = regionCatalog.allSpecificRegionsByLongestName();
 
-        List<RegionCode> exact = new ArrayList<>();
+        List<RegionTextMatchCandidate> candidates = new ArrayList<>();
         for (RegionCode region : regions) {
-            if (matchesExact(compact, region)) {
-                exact.add(region);
-            }
+            candidates.addAll(matchCandidates(compact, region));
         }
-        exact = logicalDistinct(exact);
-        exact = removeCoveredProvinces(exact);
-        if (exact.size() == 1) {
-            return UserRegionResolution.of(UserRegionResolutionStatus.EXACT, exact.get(0));
+        if (candidates.isEmpty()) {
+            return UserRegionResolution.notFound();
         }
-        if (exact.size() > 1) {
-            return pickMostSpecificOrAmbiguous(exact, UserRegionResolutionStatus.EXACT);
-        }
-
-        Map<String, List<RegionCode>> aliasMatches = new LinkedHashMap<>();
-        for (var entry : aliases.provinceAliases().entrySet()) {
-            if (compact.contains(normalizer.compact(entry.getKey()))) {
-                regionCatalog.findProvince(entry.getValue())
-                        .ifPresent(region -> aliasMatches.computeIfAbsent(entry.getKey(), key -> new ArrayList<>()).add(region));
-            }
-        }
-        for (RegionCode region : regions) {
-            String alias = shortAlias(region);
-            if (StringUtils.hasText(alias) && compact.contains(normalizer.compact(alias))) {
-                aliasMatches.computeIfAbsent(alias, key -> new ArrayList<>()).add(region);
-            }
-        }
-        List<RegionCode> candidates = logicalDistinct(aliasMatches.values().stream().flatMap(List::stream).toList());
-        if (candidates.size() == 1) {
-            return UserRegionResolution.of(UserRegionResolutionStatus.UNIQUE_ALIAS, candidates.get(0));
-        }
-        if (candidates.size() > 1) {
-            List<RegionCode> withoutCoveredProvince = removeCoveredProvinces(candidates);
-            if (withoutCoveredProvince.size() == 1) {
-                return UserRegionResolution.of(UserRegionResolutionStatus.UNIQUE_ALIAS, withoutCoveredProvince.get(0));
-            }
-            return UserRegionResolution.ambiguous(withoutCoveredProvince);
-        }
-        return UserRegionResolution.notFound();
+        return resolveByPriority(text.trim(), candidates);
     }
 
-    private boolean matchesExact(String compactText, RegionCode region) {
-        String display = normalizer.compact(region.displayName());
-        if (compactText.contains(display)) {
-            return true;
+    private String nationwideMatch(String compactText) {
+        for (String expression : List.of("전국", "전국대상", "지역무관", "거주지무관", "지역제한없음", "거주지제한없음")) {
+            if (compactText.contains(expression)) {
+                return expression;
+            }
         }
-        String province = normalizer.compact(region.getProvince());
-        if ("PROVINCE".equals(region.getRegionLevel()) && compactText.contains(province)) {
-            return true;
+        return null;
+    }
+
+    private List<RegionTextMatchCandidate> matchCandidates(String compactText, RegionCode region) {
+        List<RegionTextMatchCandidate> matches = new ArrayList<>();
+        if ("PROVINCE".equals(region.getRegionLevel())) {
+            addIfContains(matches, compactText, region, region.getProvince(), RegionTextMatchType.OFFICIAL_SIDO_NAME, 100);
+            for (String alias : aliasGenerator.aliasesForSido(region)) {
+                if (!alias.equals(region.getProvince())) {
+                    addIfContains(matches, compactText, region, alias, RegionTextMatchType.GENERATED_SIDO_ALIAS, 80);
+                }
+            }
+            return matches;
         }
-        String officialCity = normalizer.compact(region.getCity());
-        String officialShortCity = normalizer.compact(shortAlias(region));
-        if (StringUtils.hasText(officialCity)
-                && (compactText.contains(province + officialCity) || compactText.contains(province + officialShortCity))) {
-            return true;
+        if (!StringUtils.hasText(region.getCity())) {
+            return matches;
         }
-        for (var entry : aliases.provinceAliases().entrySet()) {
-            if (!entry.getValue().equals(region.getProvince())) {
+        addIfContains(matches, compactText, region, region.displayName(), RegionTextMatchType.FULL_OFFICIAL_PATH, 110);
+        addIfContains(matches, compactText, region, region.getCity(), RegionTextMatchType.OFFICIAL_SIGUNGU_NAME, 100);
+        RegionCode sido = new RegionCode(null, "", region.getProvince(), null, "PROVINCE");
+        for (String provinceAlias : aliasGenerator.aliasesForSido(sido)) {
+            addIfContains(matches, compactText, region, provinceAlias + " " + region.getCity(),
+                    RegionTextMatchType.FULL_OFFICIAL_PATH, 110);
+            String shortCityAlias = aliasGenerator.shortAlias(region.getCity());
+            if (StringUtils.hasText(shortCityAlias)) {
+                addIfContains(matches, compactText, region, provinceAlias + " " + shortCityAlias,
+                        RegionTextMatchType.SIDO_AND_SIGUNGU_ALIAS, 105);
+            }
+        }
+        for (String alias : aliasGenerator.aliasesForSigungu(sido, region)) {
+            if (alias.equals(region.getCity()) || alias.contains(" ")) {
                 continue;
             }
-            String provinceAlias = normalizer.compact(entry.getKey());
-            if (StringUtils.hasText(officialCity) && (compactText.contains(provinceAlias + officialCity) || compactText.contains(provinceAlias + officialShortCity))) {
+            int priority = compactText.equals(normalizer.compact(alias)) ? 80 : 70;
+            addIfContains(matches, compactText, region, alias, RegionTextMatchType.GENERATED_SIGUNGU_ALIAS, priority);
+        }
+        for (String generalDistrictAlias : regionCatalog.generalDistrictAliasesFor(region)) {
+            addIfContains(matches, compactText, region, generalDistrictAlias, RegionTextMatchType.GENERATED_SIGUNGU_ALIAS, 80);
+        }
+        return matches;
+    }
+
+    private void addIfContains(List<RegionTextMatchCandidate> matches, String compactText, RegionCode region,
+                               String matchedText, RegionTextMatchType matchType, int priority) {
+        if (!StringUtils.hasText(matchedText)) {
+            return;
+        }
+        String compactMatchedText = normalizer.compact(matchedText);
+        if (StringUtils.hasText(compactMatchedText) && containsValidMatch(compactText, compactMatchedText, region, matchType)) {
+            matches.add(new RegionTextMatchCandidate(region, matchType, matchedText.trim(), priority));
+        }
+    }
+
+    private boolean containsValidMatch(String compactText, String compactMatchedText, RegionCode region, RegionTextMatchType matchType) {
+        int index = compactText.indexOf(compactMatchedText);
+        while (index >= 0) {
+            if (matchType == RegionTextMatchType.FULL_OFFICIAL_PATH
+                    || matchType == RegionTextMatchType.SIDO_AND_SIGUNGU_ALIAS
+                    || SearchRegionLevel.from(region) == SearchRegionLevel.SIDO
+                    || index == 0
+                    || precededBySidoAlias(compactText, index, region)) {
                 return true;
             }
+            index = compactText.indexOf(compactMatchedText, index + 1);
         }
         return false;
     }
 
-    private UserRegionResolution pickMostSpecificOrAmbiguous(List<RegionCode> candidates, UserRegionResolutionStatus status) {
-        List<RegionCode> withoutCoveredProvince = removeCoveredProvinces(candidates);
-        List<RegionCode> sorted = withoutCoveredProvince.stream()
-                .sorted(Comparator.comparingInt((RegionCode region) -> specificity(region)).reversed()
-                        .thenComparing(region -> region.displayName().length(), Comparator.reverseOrder()))
-                .toList();
-        int topSpecificity = specificity(sorted.get(0));
-        List<RegionCode> top = sorted.stream().filter(region -> specificity(region) == topSpecificity).toList();
-        if (top.size() == 1) {
-            return UserRegionResolution.of(status, top.get(0));
+    private boolean precededBySidoAlias(String compactText, int matchIndex, RegionCode region) {
+        if (SearchRegionLevel.from(region) != SearchRegionLevel.SIGUNGU) {
+            return false;
         }
-        return UserRegionResolution.ambiguous(top);
+        RegionCode sido = new RegionCode(null, "", region.getProvince(), null, "PROVINCE");
+        String prefix = compactText.substring(0, matchIndex);
+        return aliasGenerator.aliasesForSido(sido).stream()
+                .map(normalizer::compact)
+                .anyMatch(prefix::endsWith);
     }
 
-    private List<RegionCode> removeCoveredProvinces(List<RegionCode> candidates) {
-        var provincesWithSpecific = candidates.stream()
-                .filter(region -> !"PROVINCE".equals(region.getRegionLevel()))
-                .map(RegionCode::getProvince)
-                .collect(java.util.stream.Collectors.toSet());
-        return candidates.stream()
-                .filter(region -> !"PROVINCE".equals(region.getRegionLevel()) || !provincesWithSpecific.contains(region.getProvince()))
-                .collect(java.util.stream.Collectors.collectingAndThen(
-                        java.util.stream.Collectors.toMap(this::logicalKey, region -> region, this::choosePreferred, LinkedHashMap::new),
-                        map -> new ArrayList<>(map.values())));
+    private UserRegionResolution resolveByPriority(String rawRegionText, List<RegionTextMatchCandidate> candidates) {
+        List<RegionTextMatchCandidate> distinct = logicalDistinctCandidates(candidates);
+        int topPriority = distinct.stream().mapToInt(RegionTextMatchCandidate::priority).max().orElse(0);
+        List<RegionTextMatchCandidate> top = distinct.stream()
+                .filter(candidate -> candidate.priority() == topPriority)
+                .sorted(Comparator.comparingInt((RegionTextMatchCandidate candidate) -> specificity(candidate.region())).reversed()
+                        .thenComparing(candidate -> candidate.region().displayName().length(), Comparator.reverseOrder()))
+                .toList();
+        if (top.size() == 1) {
+            return UserRegionResolution.of(statusFor(top.get(0)), rawRegionText, top.get(0));
+        }
+        UserRegionResolution sameSidoDefault = resolveSameSidoDefaultAlias(rawRegionText, top);
+        if (sameSidoDefault != null) {
+            return sameSidoDefault;
+        }
+        return UserRegionResolution.ambiguous(rawRegionText, top);
     }
 
-    private List<RegionCode> logicalDistinct(List<RegionCode> candidates) {
+    private UserRegionResolution resolveSameSidoDefaultAlias(String rawRegionText, List<RegionTextMatchCandidate> top) {
+        List<RegionTextMatchCandidate> sidos = top.stream()
+                .filter(candidate -> SearchRegionLevel.from(candidate.region()) == SearchRegionLevel.SIDO)
+                .toList();
+        if (sidos.size() != 1) {
+            return null;
+        }
+        RegionCode sido = sidos.get(0).region();
+        boolean allWithinSido = top.stream().allMatch(candidate -> sido.getProvince().equals(candidate.region().getProvince()));
+        boolean generatedOnly = top.stream().allMatch(candidate -> candidate.matchType() == RegionTextMatchType.GENERATED_SIDO_ALIAS
+                || candidate.matchType() == RegionTextMatchType.GENERATED_SIGUNGU_ALIAS);
+        if (allWithinSido && generatedOnly) {
+            return UserRegionResolution.of(UserRegionResolutionStatus.UNIQUE_ALIAS, rawRegionText, sidos.get(0));
+        }
+        return null;
+    }
+
+    private UserRegionResolutionStatus statusFor(RegionTextMatchCandidate candidate) {
+        return switch (candidate.matchType()) {
+            case FULL_OFFICIAL_PATH, OFFICIAL_SIDO_NAME, OFFICIAL_SIGUNGU_NAME, SIDO_AND_SIGUNGU_ALIAS ->
+                    UserRegionResolutionStatus.EXACT;
+            case GENERATED_SIDO_ALIAS, GENERATED_SIGUNGU_ALIAS -> UserRegionResolutionStatus.UNIQUE_ALIAS;
+        };
+    }
+
+    private List<RegionTextMatchCandidate> logicalDistinctCandidates(List<RegionTextMatchCandidate> candidates) {
         return new ArrayList<>(candidates.stream()
-                .collect(java.util.stream.Collectors.toMap(this::logicalKey, region -> region, this::choosePreferred, LinkedHashMap::new))
+                .collect(java.util.stream.Collectors.toMap(
+                        candidate -> logicalKey(candidate.region()),
+                        candidate -> candidate,
+                        this::choosePreferredCandidate,
+                        LinkedHashMap::new))
                 .values());
+    }
+
+    private RegionTextMatchCandidate choosePreferredCandidate(RegionTextMatchCandidate left, RegionTextMatchCandidate right) {
+        if (right.priority() > left.priority()) {
+            return right;
+        }
+        if (right.priority() < left.priority()) {
+            return left;
+        }
+        RegionCode preferredRegion = choosePreferred(left.region(), right.region());
+        if (preferredRegion == right.region()) {
+            return right;
+        }
+        return left;
     }
 
     private RegionCode choosePreferred(RegionCode left, RegionCode right) {
@@ -143,24 +215,15 @@ public class UserRegionTextResolver {
     }
 
     private String logicalKey(RegionCode region) {
-        return region.getRegionLevel() + "|" + region.getProvince() + "|" + (region.getCity() == null ? "" : region.getCity());
+        return SearchRegionLevel.from(region) + "|" + region.getProvince() + "|" + (region.getCity() == null ? "" : region.getCity());
     }
 
     private int specificity(RegionCode region) {
         return switch (region.getRegionLevel()) {
-            case "DISTRICT" -> 3;
             case "CITY" -> 2;
+            case "DISTRICT" -> 2;
             case "PROVINCE" -> 1;
             default -> 0;
         };
-    }
-
-    private String shortAlias(RegionCode region) {
-        String value = region.getCity();
-        if (!StringUtils.hasText(value)) {
-            value = region.getProvince();
-        }
-        String alias = value.replaceAll("(특별자치도|특별자치시|특별시|광역시|시|군|구)$", "");
-        return alias.length() >= 2 ? alias : null;
     }
 }

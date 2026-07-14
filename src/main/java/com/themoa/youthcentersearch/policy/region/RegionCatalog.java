@@ -8,8 +8,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -17,21 +19,28 @@ import java.util.Set;
 public class RegionCatalog {
     private final RegionCodeRepository repository;
     private final RegionExternalCodeRepository externalCodeRepository;
-    private final RegionAliasCatalog aliases;
+    private final RegionNameAliasGenerator aliasGenerator;
     private final RegionNormalizer normalizer;
     private volatile List<RegionCode> specificRegionsByLongestName;
+    private volatile List<RegionCode> allRegions;
+    private volatile Map<String, RegionCode> uniqueSigunguShortAliases;
 
     @Autowired
     public RegionCatalog(RegionCodeRepository repository, RegionExternalCodeRepository externalCodeRepository,
-                         RegionAliasCatalog aliases, RegionNormalizer normalizer) {
+                         RegionNameAliasGenerator aliasGenerator, RegionNormalizer normalizer) {
         this.repository = repository;
         this.externalCodeRepository = externalCodeRepository;
-        this.aliases = aliases;
+        this.aliasGenerator = aliasGenerator;
         this.normalizer = normalizer;
     }
 
     public RegionCatalog(RegionCodeRepository repository, RegionAliasCatalog aliases, RegionNormalizer normalizer) {
-        this(repository, null, aliases, normalizer);
+        this(repository, null, new RegionNameAliasGenerator(), normalizer);
+    }
+
+    public RegionCatalog(RegionCodeRepository repository, RegionExternalCodeRepository externalCodeRepository,
+                         RegionAliasCatalog aliases, RegionNormalizer normalizer) {
+        this(repository, externalCodeRepository, new RegionNameAliasGenerator(), normalizer);
     }
 
     public Optional<RegionCode> nationwide() {
@@ -66,7 +75,7 @@ public class RegionCatalog {
         if (cached != null) {
             return cached;
         }
-        List<RegionCode> loaded = repository.findAll().stream()
+        List<RegionCode> loaded = allRegions().stream()
                 .filter(region -> !"KR".equals(region.getRegionCode()))
                 .filter(this::searchSupportedLevel)
                 .sorted(Comparator.comparingInt((RegionCode region) -> region.displayName().length()).reversed())
@@ -75,8 +84,20 @@ public class RegionCatalog {
         return loaded;
     }
 
+    public List<RegionCode> allRegions() {
+        List<RegionCode> cached = allRegions;
+        if (cached != null) {
+            return cached;
+        }
+        List<RegionCode> loaded = repository.findAll();
+        allRegions = loaded;
+        return loaded;
+    }
+
     public void refreshCache() {
         specificRegionsByLongestName = null;
+        allRegions = null;
+        uniqueSigunguShortAliases = null;
     }
 
     public Set<RegionCode> findInText(String text) {
@@ -90,37 +111,45 @@ public class RegionCatalog {
                 matches.add(region);
             }
         }
-        for (var entry : aliases.provinceAliases().entrySet()) {
-            if (compact.contains(entry.getKey())) {
-                repository.findByProvince(entry.getValue()).stream()
-                        .filter(region -> "PROVINCE".equals(region.getRegionLevel()))
-                        .findFirst()
-                        .ifPresent(matches::add);
-            }
-        }
-        return removeCoveredProvince(matches);
+        return logicalDistinct(matches);
     }
 
     public Optional<RegionCode> findProvince(String province) {
-        String normalized = aliases.province(province);
-        return repository.findByProvince(normalized).stream()
+        if (!StringUtils.hasText(province)) {
+            return Optional.empty();
+        }
+        String compactInput = normalizer.compact(province);
+        return allRegions().stream()
                 .filter(region -> "PROVINCE".equals(region.getRegionLevel()))
-                .findFirst();
+                .filter(region -> aliasGenerator.aliasesForSido(region).stream()
+                        .map(normalizer::compact)
+                        .anyMatch(compactInput::equals))
+                .reduce(this::choosePreferred);
     }
 
     public Optional<RegionCode> findCity(String province, String city) {
-        String normalizedProvince = aliases.province(province);
-        String normalizedCity = normalizer.normalizeCity(city);
-        return repository.findByProvinceAndCity(normalizedProvince, normalizedCity).stream()
+        if (!StringUtils.hasText(city)) {
+            return Optional.empty();
+        }
+        String compactProvince = normalizer.compact(province);
+        String compactCity = normalizer.compact(city);
+        return allRegions().stream()
                 .filter(this::searchSupportedLevel)
-                .findFirst();
+                .filter(region -> StringUtils.hasText(region.getCity()))
+                .filter(region -> !StringUtils.hasText(province) || aliasGenerator.aliasesForSido(provinceRegion(region)).stream()
+                        .map(normalizer::compact)
+                        .anyMatch(compactProvince::equals))
+                .filter(region -> aliasGenerator.aliasesForSigungu(provinceRegion(region), region).stream()
+                        .map(alias -> compactMunicipalityAlias(alias, region))
+                        .anyMatch(compactCity::equals))
+                .reduce(this::choosePreferred);
     }
 
     private boolean searchSupportedLevel(RegionCode region) {
         if ("PROVINCE".equals(region.getRegionLevel()) || "CITY".equals(region.getRegionLevel())) {
             return true;
         }
-        return "DISTRICT".equals(region.getRegionLevel()) && !region.getProvince().endsWith("도");
+        return "DISTRICT".equals(region.getRegionLevel()) && isAutonomousDistrict(region);
     }
 
     public Optional<RegionCode> findProvinceOrCity(String province, String city) {
@@ -134,29 +163,111 @@ public class RegionCatalog {
     }
 
     private boolean matchesRegion(String compactText, RegionCode region) {
-        String display = normalizer.compact(region.displayName());
-        if (compactText.contains(display)) {
+        if (aliasesForRegion(region).stream().map(normalizer::compact).anyMatch(compactText::contains)) {
             return true;
         }
-        String city = region.getCity();
-        if (StringUtils.hasText(city) && compactText.contains(normalizer.compact(city))) {
-            return true;
-        }
-        return compactText.contains(normalizer.compact(region.getProvince())) && "PROVINCE".equals(region.getRegionLevel());
+        return false;
     }
 
-    private Set<RegionCode> removeCoveredProvince(Set<RegionCode> regions) {
-        Set<String> specificProvinces = regions.stream()
-                .filter(region -> !"PROVINCE".equals(region.getRegionLevel()))
-                .map(RegionCode::getProvince)
-                .collect(java.util.stream.Collectors.toSet());
-        Set<RegionCode> result = new LinkedHashSet<>();
-        for (RegionCode region : regions) {
-            if ("PROVINCE".equals(region.getRegionLevel()) && specificProvinces.contains(region.getProvince())) {
-                continue;
-            }
-            result.add(region);
+    private Set<String> aliasesForRegion(RegionCode region) {
+        if ("PROVINCE".equals(region.getRegionLevel())) {
+            return aliasGenerator.aliasesForSido(region);
         }
-        return result;
+        return aliasGenerator.aliasesForSigungu(provinceRegion(region), region);
+    }
+
+    private String compactMunicipalityAlias(String alias, RegionCode region) {
+        String compact = normalizer.compact(alias);
+        for (String provinceAlias : aliasGenerator.aliasesForSido(provinceRegion(region))) {
+            String compactProvince = normalizer.compact(provinceAlias);
+            if (compact.startsWith(compactProvince)) {
+                return compact.substring(compactProvince.length());
+            }
+        }
+        return compact;
+    }
+
+    private Set<RegionCode> logicalDistinct(Set<RegionCode> regions) {
+        return regions.stream()
+                .collect(java.util.stream.Collectors.collectingAndThen(
+                        java.util.stream.Collectors.toMap(this::logicalKey, region -> region, this::choosePreferred, LinkedHashMap::new),
+                        map -> new LinkedHashSet<>(map.values())));
+    }
+
+    public Set<String> generalDistrictAliasesFor(RegionCode cityRegion) {
+        Set<String> aliases = new LinkedHashSet<>();
+        if (cityRegion == null || !"CITY".equals(cityRegion.getRegionLevel()) || !StringUtils.hasText(cityRegion.getCity())) {
+            return aliases;
+        }
+        String prefix = cityRegion.getCity() + " ";
+        allRegions().stream()
+                .filter(region -> "DISTRICT".equals(region.getRegionLevel()))
+                .filter(region -> cityRegion.getProvince().equals(region.getProvince()))
+                .filter(region -> StringUtils.hasText(region.getCity()) && region.getCity().startsWith(prefix))
+                .forEach(region -> {
+                    aliases.add(region.getCity());
+                    String districtName = region.getCity().substring(prefix.length()).trim();
+                    if (StringUtils.hasText(districtName)) {
+                        aliases.add(districtName);
+                        String shortAlias = aliasGenerator.shortAlias(districtName);
+                        if (StringUtils.hasText(shortAlias)) {
+                            aliases.add(shortAlias);
+                        }
+                    }
+                });
+        return aliases;
+    }
+
+    public Optional<RegionCode> uniqueSigunguByShortAlias(String alias) {
+        if (!StringUtils.hasText(alias)) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(uniqueSigunguShortAliases().get(normalizer.compact(alias)));
+    }
+
+    private Map<String, RegionCode> uniqueSigunguShortAliases() {
+        Map<String, RegionCode> cached = uniqueSigunguShortAliases;
+        if (cached != null) {
+            return cached;
+        }
+        Map<String, List<RegionCode>> grouped = allSpecificRegionsByLongestName().stream()
+                .filter(region -> "CITY".equals(region.getRegionLevel()) || "DISTRICT".equals(region.getRegionLevel()))
+                .collect(java.util.stream.Collectors.groupingBy(region -> {
+                    String shortAlias = aliasGenerator.shortAlias(region.getCity());
+                    return StringUtils.hasText(shortAlias) ? normalizer.compact(shortAlias) : "";
+                }, LinkedHashMap::new, java.util.stream.Collectors.toList()));
+        Map<String, RegionCode> unique = new LinkedHashMap<>();
+        grouped.forEach((alias, regions) -> {
+            if (StringUtils.hasText(alias) && regions.size() == 1) {
+                unique.put(alias, regions.get(0));
+            }
+        });
+        uniqueSigunguShortAliases = unique;
+        return unique;
+    }
+
+    private RegionCode choosePreferred(RegionCode left, RegionCode right) {
+        if (standardInternalCode(right) && !standardInternalCode(left)) {
+            return right;
+        }
+        return left;
+    }
+
+    private boolean standardInternalCode(RegionCode region) {
+        String code = region.getRegionCode();
+        return "KR".equals(code) || code.startsWith("P:") || code.startsWith("M:");
+    }
+
+    private String logicalKey(RegionCode region) {
+        return SearchRegionLevel.from(region) + "|" + region.getProvince() + "|" + (region.getCity() == null ? "" : region.getCity());
+    }
+
+    private RegionCode provinceRegion(RegionCode region) {
+        return new RegionCode(null, "", region.getProvince(), null, "PROVINCE");
+    }
+
+    private boolean isAutonomousDistrict(RegionCode region) {
+        SidoType sidoType = SidoType.fromOfficialName(region.getProvince());
+        return SigunguType.from(sidoType, region.getCity()) == SigunguType.AUTONOMOUS_DISTRICT;
     }
 }

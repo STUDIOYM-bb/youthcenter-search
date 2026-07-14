@@ -58,6 +58,8 @@ public class RagProperties {
         @Min(1)
         private int resultSize = 20;
         private double minimumSimilarity = 0.55;
+        private double minimumTopicRelevance = 0.25;
+        private double regionSpecificityTieWindow = 0.05;
         private boolean includeUnknownRegion = false;
         private boolean mysqlFallbackEnabled = true;
 
@@ -69,6 +71,10 @@ public class RagProperties {
         public void setResultSize(int resultSize) { this.resultSize = resultSize; }
         public double getMinimumSimilarity() { return minimumSimilarity; }
         public void setMinimumSimilarity(double minimumSimilarity) { this.minimumSimilarity = minimumSimilarity; }
+        public double getMinimumTopicRelevance() { return minimumTopicRelevance; }
+        public void setMinimumTopicRelevance(double minimumTopicRelevance) { this.minimumTopicRelevance = minimumTopicRelevance; }
+        public double getRegionSpecificityTieWindow() { return regionSpecificityTieWindow; }
+        public void setRegionSpecificityTieWindow(double regionSpecificityTieWindow) { this.regionSpecificityTieWindow = regionSpecificityTieWindow; }
         public boolean isIncludeUnknownRegion() { return includeUnknownRegion; }
         public void setIncludeUnknownRegion(boolean includeUnknownRegion) { this.includeUnknownRegion = includeUnknownRegion; }
         public boolean isMysqlFallbackEnabled() { return mysqlFallbackEnabled; }

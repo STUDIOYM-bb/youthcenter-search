@@ -24,6 +24,10 @@
         if (refreshRegionCacheBtn) {
             refreshRegionCacheBtn.addEventListener("click", refreshRegionCache);
         }
+        const explainSearchBtn = document.getElementById("explainSearchBtn");
+        if (explainSearchBtn) {
+            explainSearchBtn.addEventListener("click", explainSearch);
+        }
         loadStatus();
         resumeLatestJob();
     });
@@ -90,6 +94,12 @@
             }
             if (job === "region-catalog-repair") {
                 endpoint = "/api/admin/jobs/region-catalog-repair";
+            }
+            if (job === "search-quality-suite") {
+                endpoint = "/api/admin/search/quality-suite";
+            }
+            if (job === "region-quality-suite") {
+                endpoint = "/api/admin/search/region-quality-suite";
             }
             const data = await api.post(endpoint, {});
             document.getElementById("adminRaw").textContent = JSON.stringify(data, null, 2);
@@ -226,6 +236,39 @@
             hideAlert();
             const data = await api.post("/api/admin/regions/cache/refresh", {});
             showAlert(data, false);
+        } catch (error) {
+            showAlert(error.message, true);
+        }
+    }
+
+    async function explainSearch() {
+        try {
+            hideAlert();
+            const query = document.getElementById("explainQueryInput").value;
+            const policyIdValue = document.getElementById("explainPolicyIdInput").value;
+            const sourcePolicyId = document.getElementById("explainSourcePolicyIdInput").value;
+            const payload = { query };
+            if (policyIdValue) {
+                payload.policyId = Number(policyIdValue);
+            }
+            if (sourcePolicyId) {
+                payload.sourcePolicyId = sourcePolicyId;
+            }
+            const data = await api.post("/api/admin/search/explain", payload);
+            renderDefinition(document.getElementById("searchExplainResult"), {
+                "정책 ID": data.policyId,
+                "정책명": data.policyName,
+                "후보 검색 경로": Array.isArray(data.candidateSources) ? data.candidateSources.join(", ") : data.candidateSources,
+                "지역 판정": data.region && `${data.region.status} / ${data.region.reason}`,
+                "나이 판정": data.age && `${data.age.status} / ${data.age.reason}`,
+                "취업 상태 판정": data.employment && `${data.employment.status} / ${data.employment.reason}`,
+                "학생 상태 판정": data.student && `${data.student.status} / ${data.student.reason}`,
+                "Topic 점수": data.topicRelevance && data.topicRelevance.score,
+                "최종 포함 여부": data.finalDisposition,
+                "최종 점수": data.finalScore,
+                "최종 순위": data.finalRank
+            });
+            document.getElementById("adminRaw").textContent = JSON.stringify(data, null, 2);
         } catch (error) {
             showAlert(error.message, true);
         }

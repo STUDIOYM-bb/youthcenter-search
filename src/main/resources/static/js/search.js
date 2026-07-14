@@ -39,7 +39,9 @@
         renderDefinition(document.getElementById("searchSummary"), {
             "분석 방식": data.parserMode,
             "검색 모드": modeLabel((data.diagnostics && data.diagnostics.searchMode) || data.searchMode),
-            "해석한 지역": [c.province, c.city, c.district].filter(Boolean).join(" "),
+            "해석한 지역": regionText(c),
+            "지역 단위": regionLevelText(c),
+            "지역 후보": regionCandidateText(c),
             "명시 지역 여부": yesNo(c.regionExplicit),
             "나이": c.age,
             "명시 나이 여부": yesNo(c.ageExplicit),
@@ -51,17 +53,45 @@
             "핵심 키워드": data.diagnostics && data.diagnostics.coreKeywords,
             "확장 키워드": data.diagnostics && data.diagnostics.expandedKeywords,
             "Qdrant 후보 수": data.diagnostics && data.diagnostics.vectorCandidateCount,
+            "Qdrant 원문 후보": data.diagnostics && data.diagnostics.originalVectorCandidateCount,
+            "Qdrant 의도 후보": data.diagnostics && data.diagnostics.intentVectorCandidateCount,
+            "Qdrant 확장 후보": data.diagnostics && data.diagnostics.expandedVectorCandidateCount,
+            "Qdrant 카테고리 후보": data.diagnostics && data.diagnostics.categoryVectorCandidateCount,
             "MySQL 키워드 후보 수": data.diagnostics && data.diagnostics.lexicalCandidateCount,
+            "MySQL 제목 후보": data.diagnostics && data.diagnostics.mysqlTitleCandidateCount,
+            "MySQL 키워드 후보": data.diagnostics && data.diagnostics.mysqlKeywordCandidateCount,
+            "MySQL 요약 후보": data.diagnostics && data.diagnostics.mysqlSummaryCandidateCount,
+            "MySQL 분야 후보": data.diagnostics && data.diagnostics.mysqlCategoryCandidateCount,
             "병합 후보 수": data.diagnostics && data.diagnostics.mergedCandidateCount,
             "중복 후보 수": data.diagnostics && data.diagnostics.duplicateCandidateCount,
+            "지역 적격 Pool": data.diagnostics && data.diagnostics.regionEligiblePoolCount,
+            "정확 시·군 Pool": data.diagnostics && data.diagnostics.exactSigunguPoolCount,
+            "상위 시·도 Pool": data.diagnostics && data.diagnostics.parentSidoPoolCount,
+            "전국 Pool": data.diagnostics && data.diagnostics.nationwidePoolCount,
+            "복수 지역 Pool": data.diagnostics && data.diagnostics.multipleRegionPoolCount,
+            "UNKNOWN 제외": data.diagnostics && data.diagnostics.unknownExcludedCount,
+            "다른 지역 제외": data.diagnostics && data.diagnostics.wrongRegionExcludedCount,
+            "첫 페이지 정확 지역 보장": data.diagnostics && data.diagnostics.exactSigunguSelectedCount,
+            "첫 페이지 상위 시·도 보장": data.diagnostics && data.diagnostics.parentSidoSelectedCount,
             "지역 필터": data.diagnostics && data.diagnostics.regionFilterApplied ? "적용" : "미적용",
             "나이 필터": data.diagnostics && data.diagnostics.ageFilterApplied ? "적용" : "미적용",
             "취업 상태 필터": data.diagnostics && data.diagnostics.employmentFilterApplied ? "적용" : "미적용",
-            "시/군/구 정확 일치": data.diagnostics && data.diagnostics.cityMatchedCount,
-            "광역 지역 일치": data.diagnostics && data.diagnostics.provinceMatchedCount,
-            "전국 정책": data.diagnostics && data.diagnostics.nationwideCandidateCount,
+            "시·군·자치구 정확 일치": data.diagnostics && (data.diagnostics.exactSigunguMatchedCount ?? data.diagnostics.cityMatchedCount),
+            "시·도 전체 정확 일치": data.diagnostics && data.diagnostics.exactSidoMatchedCount,
+            "상위 시·도 전체": data.diagnostics && data.diagnostics.parentSidoMatchedCount,
+            "전국 정책": data.diagnostics && (data.diagnostics.nationwideMatchedCount ?? data.diagnostics.nationwideCandidateCount),
+            "복수 지역 일치": data.diagnostics && data.diagnostics.multipleRegionMatchedCount,
             "다른 지역 후보": data.diagnostics && data.diagnostics.regionNotMatchedCount,
             "지역 확인 필요 후보": data.diagnostics && data.diagnostics.regionUnknownCount,
+            "Topic 통과": data.diagnostics && data.diagnostics.topicThresholdPassedCount,
+            "Topic 제외": data.diagnostics && data.diagnostics.topicThresholdFailedCount,
+            "Topic 필터 제외": data.diagnostics && data.diagnostics.topicFilteredCount,
+            "나이 일치": data.diagnostics && data.diagnostics.ageMatchedCount,
+            "나이 확인 필요": data.diagnostics && data.diagnostics.ageUnknownCount,
+            "나이 불일치": data.diagnostics && data.diagnostics.ageMismatchedCount,
+            "취업 일치": data.diagnostics && data.diagnostics.employmentMatchedCount,
+            "취업 확인 필요": data.diagnostics && data.diagnostics.employmentUnknownCount,
+            "취업 불일치": data.diagnostics && data.diagnostics.employmentMismatchedCount,
             "조건 통과 수": data.filteredCount,
             "최종 결과 수": data.diagnostics && data.diagnostics.finalResultCount,
             "실패 원인": data.diagnostics && data.diagnostics.fallbackReason,
@@ -75,13 +105,16 @@
                 <div class="meta-list">
                     <span>분야: ${safe(item.category)}</span>
                     <span>정책 적용 지역: ${safe(item.region)}</span>
-                    <span>지역 판정: ${safe(item.regionMatchDescription)}</span>
+                    <span>지역 판정: ${safe(item.regionMatchLabel || item.regionMatchDescription)}</span>
+                    <span>지역 일치 사유: ${safe(item.regionMatchReason || item.regionMatchDescription)}</span>
+                    <span>지역 점수: ${safe(item.regionScore)}</span>
                     <span>기관: ${safe(item.agencyName)}</span>
                     <span>나이 조건: ${safe(ageText(item))}</span>
                     <span>취업 조건: ${safe(item.employmentStatus)}</span>
                     <span>신청 기간: ${safe(periodText(item))}</span>
                     <span>신청 상태: ${safe(item.applicationStatus)}</span>
                     <span>검색 관련도: ${safe(item.finalScore)}</span>
+                    <span>주제 관련도: ${safe(item.topicScore)}</span>
                 </div>
                 <p>${safe(item.summary)}</p>
                 <strong>조건 일치 이유</strong>
@@ -90,12 +123,41 @@
                 <ul class="reason-list">${listItems(item.regionEvidence)}</ul>
                 <strong>확인 필요 조건</strong>
                 <ul class="reason-list">${listItems(item.needCheckReasons)}</ul>
+                <strong>후보 검색 경로</strong>
+                <ul class="reason-list">${listItems(item.candidateSources)}</ul>
                 <div class="button-row">
                     ${item.officialUrl ? `<a class="button-link" href="${escapeAttr(item.officialUrl)}" target="_blank" rel="noreferrer">공식 링크</a>` : ""}
                     <button type="button" class="secondary detail-button" data-id="${escapeAttr(item.policyId)}">상세보기</button>
                 </div>
             </article>`);
         });
+    }
+
+    function regionText(condition) {
+        if (condition.regionResolutionStatus === "AMBIGUOUS") {
+            return "지역 확인 필요";
+        }
+        return [condition.province, condition.city].filter(Boolean).join(" ") || "정보 없음";
+    }
+
+    function regionLevelText(condition) {
+        if (condition.regionResolutionStatus === "AMBIGUOUS") {
+            return "지역 확인 필요";
+        }
+        if (condition.regionLevel === "SIDO") {
+            return "시·도 전체";
+        }
+        if (condition.regionLevel === "SIGUNGU") {
+            return "시·군·자치구";
+        }
+        return "";
+    }
+
+    function regionCandidateText(condition) {
+        if (condition.regionResolutionStatus !== "AMBIGUOUS") {
+            return "";
+        }
+        return (condition.regionCandidates || []).join(" / ");
     }
 
     function formData(formElement) {

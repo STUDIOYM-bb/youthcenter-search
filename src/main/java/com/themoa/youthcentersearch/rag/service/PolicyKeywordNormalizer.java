@@ -9,6 +9,6 @@ public class PolicyKeywordNormalizer {
             return "";
         }
         return value.toLowerCase()
-                .replaceAll("[\\s·ㆍ,()\\[\\]{}<>\"'`~!@#$%^&*_=+|\\\\:;?/.]", "");
+                .replaceAll("[\\s\\-\\u2010\\u2011\\u2012\\u2013\\u2014\\u2212·ㆍ,()\\[\\]{}<>\"'`~!@#$%^&*_=+|\\\\:;?/.]", "");
     }
 }

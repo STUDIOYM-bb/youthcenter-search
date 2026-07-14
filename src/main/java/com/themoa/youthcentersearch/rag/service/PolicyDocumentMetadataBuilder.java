@@ -3,6 +3,7 @@ package com.themoa.youthcentersearch.rag.service;
 import com.themoa.youthcentersearch.policy.domain.Policy;
 import com.themoa.youthcentersearch.policy.domain.PolicyCondition;
 import com.themoa.youthcentersearch.policy.domain.RegionCode;
+import com.themoa.youthcentersearch.policy.region.PolicyRegionClassificationResult;
 import com.themoa.youthcentersearch.policy.region.RegionScope;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,9 @@ public class PolicyDocumentMetadataBuilder {
     public Map<String, Object> metadata(Policy policy, String contentHash) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         put(metadata, "policyId", policy.getId());
+        put(metadata, "documentVersion", PolicyDocumentBuilder.DOCUMENT_VERSION);
+        put(metadata, "projectionVersion", PolicySearchProjectionService.VERSION);
+        put(metadata, "regionClassifierVersion", PolicyRegionClassificationResult.VERSION);
         put(metadata, "sourcePolicyId", policy.getSourcePolicyId());
         put(metadata, "source", policy.getSourceType());
         put(metadata, "title", policy.getTitle());
@@ -42,7 +46,7 @@ public class PolicyDocumentMetadataBuilder {
         put(metadata, "startDate", policy.getStartDate() == null ? null : policy.getStartDate().toString());
         put(metadata, "dueDate", policy.getDueDate() == null ? null : policy.getDueDate().toString());
         put(metadata, "alwaysOpen", policy.isAlwaysOpen() ? 1 : 0);
-        put(metadata, "active", policy.isActive() ? 1 : 0);
+        put(metadata, "active", policy.isActive());
         put(metadata, "contentHash", contentHash);
         put(metadata, "officialUrl", policy.getOfficialUrl());
         return metadata;

@@ -12,6 +12,8 @@ import java.util.Optional;
 public interface PolicyRepository extends JpaRepository<Policy, Integer> {
     Optional<Policy> findBySourceTypeAndSourcePolicyId(String sourceType, String sourcePolicyId);
 
+    Optional<Policy> findBySourcePolicyId(String sourcePolicyId);
+
     long countByActiveTrue();
 
     List<Policy> findByActiveTrue(Pageable pageable);

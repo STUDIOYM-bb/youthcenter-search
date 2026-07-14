@@ -20,12 +20,22 @@ public class InstitutionRegionResolver {
     }
 
     public Set<RegionCode> resolve(String institution) {
+        return analyze(institution).regions();
+    }
+
+    public InstitutionRegionResult analyze(String institution) {
         Set<RegionCode> result = new LinkedHashSet<>();
-        if (institution == null || institution.isBlank() || isCentralInstitution(institution)) {
-            return result;
+        if (institution == null || institution.isBlank()) {
+            return new InstitutionRegionResult(InstitutionRegionType.UNKNOWN_INSTITUTION, result);
+        }
+        if (isCentralInstitution(institution)) {
+            return new InstitutionRegionResult(InstitutionRegionType.NATIONAL_INSTITUTION, result);
         }
         result.addAll(catalog.findInText(institution));
-        return result;
+        if (!result.isEmpty()) {
+            return new InstitutionRegionResult(InstitutionRegionType.LOCAL_INSTITUTION, result);
+        }
+        return new InstitutionRegionResult(InstitutionRegionType.UNKNOWN_INSTITUTION, result);
     }
 
     public boolean isCentralInstitution(String institution) {
