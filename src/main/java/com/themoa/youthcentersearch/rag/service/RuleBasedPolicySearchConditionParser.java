@@ -13,10 +13,13 @@ import java.util.regex.Pattern;
 public class RuleBasedPolicySearchConditionParser {
     private static final Pattern AGE = Pattern.compile("(\\d{1,2})\\s*(살|세)");
     private final UserRegionTextResolver userRegionTextResolver;
+    private final UserEmploymentStatusDetector employmentStatusDetector;
     private final PolicyIntentPolarityDetector polarityDetector = new PolicyIntentPolarityDetector();
 
-    public RuleBasedPolicySearchConditionParser(UserRegionTextResolver userRegionTextResolver) {
+    public RuleBasedPolicySearchConditionParser(UserRegionTextResolver userRegionTextResolver,
+                                                UserEmploymentStatusDetector employmentStatusDetector) {
         this.userRegionTextResolver = userRegionTextResolver;
+        this.employmentStatusDetector = employmentStatusDetector;
     }
 
     public PolicySearchCondition parseCondition(String query, Integer resultSize) {
@@ -41,12 +44,8 @@ public class RuleBasedPolicySearchConditionParser {
         if (matcher.find()) {
             age = Integer.parseInt(matcher.group(1));
         }
-        String employment = null;
-        if (containsAny(text, "무직", "미취업", "취준생", "구직자") || containsAny(text, "취업은 안", "취업 안", "직장이 없")) {
-            employment = "UNEMPLOYED";
-        } else if (containsAny(text, "재직", "직장인")) {
-            employment = "EMPLOYED";
-        }
+        var detectedEmployment = employmentStatusDetector.detect(text);
+        String employment = detectedEmployment.explicit() ? detectedEmployment.status().name() : null;
         Boolean student = null;
         if (containsAny(text, "대학생", "재학생", "휴학생")) {
             student = true;

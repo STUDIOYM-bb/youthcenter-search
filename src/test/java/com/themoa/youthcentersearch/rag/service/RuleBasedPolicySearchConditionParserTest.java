@@ -17,7 +17,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class RuleBasedPolicySearchConditionParserTest {
-    private final RuleBasedPolicySearchConditionParser parser = new RuleBasedPolicySearchConditionParser(resolver());
+    private final RuleBasedPolicySearchConditionParser parser = new RuleBasedPolicySearchConditionParser(
+            resolver(), new UserEmploymentStatusDetector());
 
     @Test
     void extractsRegionAgeEmploymentAndKeywords() {

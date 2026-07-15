@@ -59,6 +59,12 @@ public class CompositePolicySearchConditionParser implements PolicySearchConditi
                                     "구직 중이라 지원이 필요해", "면접비 지원을 찾고 있어", "취업 준비 중이야".
                                     UNEMPLOYED plus positive EMPLOYMENT examples: "미취업이라 취업 지원 정책을 찾고 있어",
                                     "직장이 없어서 구직 지원이 필요해", "취준생인데 면접비 지원을 찾고 있어".
+                                    EMPLOYED status examples: "직장에 다니고 있다", "회사에서 일하고 있다",
+                                    "현재 근무 중이다", "재직 중이다", "직장인", "회사원", "근로자".
+                                    UNEMPLOYED status examples: "직장을 구하고 있다", "직장을 찾고 있다",
+                                    "취업 준비 중이다", "현재 무직이다", "직장이 없다".
+                                    "직장에 다니고 있다" means employmentStatus=EMPLOYED but not desiredDomains=EMPLOYMENT.
+                                    "직장에 다니며 이직 지원을 찾고 있다" means employmentStatus=EMPLOYED and desiredDomains may include EMPLOYMENT.
                                     Return normalizedGoal with only positive search purpose. Do not include excluded topic words
                                     in normalizedGoal.
                                     Fields: rawRegionText, province, city, district, age, employmentStatus, studentStatus,

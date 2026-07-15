@@ -8,7 +8,6 @@ import java.util.regex.Pattern;
 @Component
 public class ExplicitConditionDetector {
     private static final Pattern AGE = Pattern.compile("(만\\s*)?\\d{1,2}\\s*(살|세)");
-    private static final Pattern EMPLOYMENT = Pattern.compile("무직|미취업|취준생|취업\\s*준비|구직자|재직자|직장인|회사원|사회초년생");
     private static final Pattern STUDENT = Pattern.compile("대학생(?:이야|입니다|이에요|이고|으로|인\\s*나|인\\s*청년)?|재학생|휴학생");
     private static final Pattern EMPLOYMENT_CATEGORY_REQUEST = Pattern.compile(
             "(취업|구직|일자리|면접|채용).{0,12}(지원|정책|찾|추천|알려|필요|원해)"
@@ -16,9 +15,12 @@ public class ExplicitConditionDetector {
     );
 
     private final UserRegionTextResolver userRegionTextResolver;
+    private final UserEmploymentStatusDetector employmentStatusDetector;
 
-    public ExplicitConditionDetector(UserRegionTextResolver userRegionTextResolver) {
+    public ExplicitConditionDetector(UserRegionTextResolver userRegionTextResolver,
+                                     UserEmploymentStatusDetector employmentStatusDetector) {
         this.userRegionTextResolver = userRegionTextResolver;
+        this.employmentStatusDetector = employmentStatusDetector;
     }
 
     public boolean ageExplicit(String query) {
@@ -26,7 +28,7 @@ public class ExplicitConditionDetector {
     }
 
     public boolean employmentExplicit(String query) {
-        return query != null && EMPLOYMENT.matcher(query).find();
+        return employmentStatusDetector.detect(query).explicit();
     }
 
     public boolean studentExplicit(String query) {

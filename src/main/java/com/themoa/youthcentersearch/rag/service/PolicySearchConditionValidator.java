@@ -12,20 +12,24 @@ public class PolicySearchConditionValidator {
     private final ExplicitConditionDetector explicitDetector;
     private final PolicyKeywordExtractor keywordExtractor;
     private final UserRegionTextResolver userRegionTextResolver;
+    private final UserEmploymentStatusDetector employmentStatusDetector;
 
     public PolicySearchConditionValidator(ExplicitConditionDetector explicitDetector,
                                           PolicyKeywordExtractor keywordExtractor,
-                                          UserRegionTextResolver userRegionTextResolver) {
+                                          UserRegionTextResolver userRegionTextResolver,
+                                          UserEmploymentStatusDetector employmentStatusDetector) {
         this.explicitDetector = explicitDetector;
         this.keywordExtractor = keywordExtractor;
         this.userRegionTextResolver = userRegionTextResolver;
+        this.employmentStatusDetector = employmentStatusDetector;
     }
 
     public PolicySearchCondition validate(String query, PolicySearchCondition parsed, Integer resultSize) {
         UserRegionResolution resolvedRegion = resolveRegion(query, parsed);
         boolean regionExplicit = resolvedRegion.resolved();
         boolean ageExplicit = explicitDetector.ageExplicit(query);
-        boolean employmentExplicit = explicitDetector.employmentExplicit(query);
+        var detectedEmployment = employmentStatusDetector.detect(query);
+        boolean employmentExplicit = detectedEmployment.explicit();
         boolean studentExplicit = explicitDetector.studentExplicit(query);
         boolean categoryExplicit = explicitDetector.categoryExplicit(query);
         boolean supportTypeExplicit = explicitDetector.supportTypeExplicit(query);
@@ -35,7 +39,9 @@ public class PolicySearchConditionValidator {
         String city = regionExplicit ? resolvedRegion.city() : null;
         String district = regionExplicit ? resolvedRegion.district() : null;
         Integer age = ageExplicit && parsed != null ? parsed.age() : null;
-        String employment = employmentExplicit && parsed != null ? parsed.employmentStatus() : null;
+        String employment = detectedEmployment.explicit()
+                ? detectedEmployment.status().name()
+                : employmentFromParsedWithEvidence(query, parsed);
         Boolean student = studentExplicit && parsed != null ? parsed.studentStatus() : null;
         String category = parsed == null ? null : parsed.category();
         var supportTypes = parsed == null ? java.util.Set.<String>of() : parsed.supportTypes();
@@ -48,6 +54,17 @@ public class PolicySearchConditionValidator {
                 java.util.Set.copyOf(resolvedRegion.candidates()),
                 regionExplicit, ageExplicit, employmentExplicit, studentExplicit,
                 categoryExplicit, supportTypeExplicit, mode, resultSize);
+    }
+
+    private String employmentFromParsedWithEvidence(String query, PolicySearchCondition parsed) {
+        if (parsed == null || !StringUtils.hasText(parsed.employmentStatus())) {
+            return null;
+        }
+        var detected = employmentStatusDetector.detect(query);
+        if (detected.explicit()) {
+            return detected.status().name();
+        }
+        return explicitDetector.employmentExplicit(query) ? parsed.employmentStatus() : null;
     }
 
     private UserRegionResolution resolveRegion(String query, PolicySearchCondition parsed) {

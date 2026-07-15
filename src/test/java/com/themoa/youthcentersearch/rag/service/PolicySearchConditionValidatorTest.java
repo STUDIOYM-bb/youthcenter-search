@@ -21,10 +21,12 @@ import static org.mockito.Mockito.when;
 
 class PolicySearchConditionValidatorTest {
     private final UserRegionTextResolver userRegionTextResolver = resolver();
+    private final UserEmploymentStatusDetector employmentStatusDetector = new UserEmploymentStatusDetector();
     private final PolicySearchConditionValidator validator = new PolicySearchConditionValidator(
-            new ExplicitConditionDetector(userRegionTextResolver),
+            new ExplicitConditionDetector(userRegionTextResolver, employmentStatusDetector),
             new PolicyKeywordExtractor(new PolicyKeywordSynonymCatalog(), new PolicyKeywordNormalizer()),
-            userRegionTextResolver);
+            userRegionTextResolver,
+            employmentStatusDetector);
 
     @Test
     void keywordQueryDoesNotCreateHardConditions() {

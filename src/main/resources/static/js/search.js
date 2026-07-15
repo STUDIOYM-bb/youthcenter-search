@@ -66,6 +66,15 @@
             "교육 단계 명시 여부": data.diagnostics && yesNo(data.diagnostics.educationStageExplicit),
             "대상 단계 불일치 제외": data.diagnostics && data.diagnostics.targetStageMismatchFilteredCount,
             "대상 단계 확인 필요": data.diagnostics && data.diagnostics.targetStageUnknownCount,
+            "사용자 취업 상태": data.diagnostics && data.diagnostics.userEmploymentStatus,
+            "취업 상태 명시 여부": data.diagnostics && yesNo(data.diagnostics.userEmploymentExplicit),
+            "취업 상태 판정 근거": data.diagnostics && data.diagnostics.userEmploymentEvidence,
+            "취업 상태 분석 출처": data.diagnostics && data.diagnostics.userEmploymentAnalysisSource,
+            "EMPLOYED 불일치 제외": data.diagnostics && data.diagnostics.employedMismatchFilteredCount,
+            "UNEMPLOYED 불일치 제외": data.diagnostics && data.diagnostics.unemployedMismatchFilteredCount,
+            "PRIMARY 후보 수": data.diagnostics && data.diagnostics.primaryCandidateCount,
+            "확인 필요 후보 수": data.diagnostics && data.diagnostics.needsConfirmationCandidateCount,
+            "확인 필요 정책 사용 여부": data.diagnostics && yesNo(data.diagnostics.needsConfirmationUsed),
             "의도 분석 충돌": data.diagnostics && yesNo(data.diagnostics.semanticConflictDetected),
             "의도 분석 충돌 사유": data.diagnostics && data.diagnostics.semanticConflictReason,
             "Qdrant 후보 수": data.diagnostics && data.diagnostics.vectorCandidateCount,
@@ -126,6 +135,9 @@
                     <span>제외 분야 통과: ${safe(item.excludedDomainPassed ? "통과" : "제외 대상")}</span>
                     <span>정책 대상 교육 단계: ${safe((item.targetEducationStages || []).join(", "))}</span>
                     <span>사용자 단계 일치: ${safe(item.targetStageMatchStatus)} - ${safe(item.targetStageMatchReason)}</span>
+                    <span>정책 허용 취업 상태: ${safe((item.allowedEmploymentStatuses || []).join(", "))}</span>
+                    <span>취업 상태 전용 여부: ${safe(item.employmentAudienceExclusive ? "전용" : "비전용")}</span>
+                    <span>추천 Tier: ${safe(item.recommendationTier)} - ${safe(item.recommendationTierReason)}</span>
                     <span>정책 적용 지역: ${safe(item.region)}</span>
                     <span>지역 판정: ${safe(item.regionMatchLabel || item.regionMatchDescription)}</span>
                     <span>지역 일치 사유: ${safe(item.regionMatchReason || item.regionMatchDescription)}</span>
@@ -151,6 +163,8 @@
                 <ul class="reason-list">${listItems(item.domainEvidence)}</ul>
                 <strong>대상 단계 판정 근거</strong>
                 <ul class="reason-list">${listItems(item.targetEducationEvidence)}</ul>
+                <strong>취업 대상 판정 근거</strong>
+                <ul class="reason-list">${listItems(item.employmentAudienceEvidence)}</ul>
                 <div class="button-row">
                     ${item.officialUrl ? `<a class="button-link" href="${escapeAttr(item.officialUrl)}" target="_blank" rel="noreferrer">공식 링크</a>` : ""}
                     <button type="button" class="secondary detail-button" data-id="${escapeAttr(item.policyId)}">상세보기</button>

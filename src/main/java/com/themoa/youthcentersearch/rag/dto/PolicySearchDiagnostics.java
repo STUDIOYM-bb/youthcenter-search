@@ -86,6 +86,15 @@ public record PolicySearchDiagnostics(
         boolean educationStageExplicit,
         int targetStageMismatchFilteredCount,
         int targetStageUnknownCount,
+        String userEmploymentStatus,
+        boolean userEmploymentExplicit,
+        String userEmploymentEvidence,
+        String userEmploymentAnalysisSource,
+        int employedMismatchFilteredCount,
+        int unemployedMismatchFilteredCount,
+        int primaryCandidateCount,
+        int needsConfirmationCandidateCount,
+        boolean needsConfirmationUsed,
         boolean semanticConflictDetected,
         String semanticConflictReason
 ) {

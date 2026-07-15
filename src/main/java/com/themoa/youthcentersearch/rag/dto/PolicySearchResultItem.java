@@ -46,6 +46,11 @@ public record PolicySearchResultItem(
         List<String> targetEducationExcludedStages,
         List<String> targetEducationEvidence,
         String targetStageMatchStatus,
-        String targetStageMatchReason
+        String targetStageMatchReason,
+        List<String> allowedEmploymentStatuses,
+        boolean employmentAudienceExclusive,
+        List<String> employmentAudienceEvidence,
+        String recommendationTier,
+        String recommendationTierReason
 ) {
 }
