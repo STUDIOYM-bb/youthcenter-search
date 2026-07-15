@@ -11,8 +11,12 @@ zip -r "$output" . \
   -x ".gradle/*" \
   -x "build/*" \
   -x "out/*" \
+  -x "logs/*" \
+  -x "__MACOSX/*" \
+  -x "*.jar" \
   -x ".env" \
   -x ".env.*" \
+  -x "config/application-secret.yml" \
   -x "src/main/resources/application-secret.yml" \
   -x "*.log"
 

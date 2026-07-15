@@ -43,25 +43,21 @@ public class PolicyGeographyClassifier {
         boolean nationwideExpression = addNationwideEvidence(fields, evidence);
         boolean nationalInstitution = false;
 
-        addRegions(strongRegions, evidence, RegionEvidenceSource.PARTICIPANT_TARGET,
+        // 신청 대상/추가 자격은 policy_region에 저장 가능한 가장 강한 근거다.
+        // 같은 문장에 기업 소재지나 활동 장소가 함께 있어도 role이 다르면 evidence로만 남긴다.
+        addEligibilityRegions(strongRegions, evidence, RegionEvidenceSource.PARTICIPANT_TARGET,
                 text(fields, "ptcpPrpTrgtCn", "conditionSummary"), 96, true);
-        addRegions(strongRegions, evidence, RegionEvidenceSource.ADDITIONAL_QUALIFICATION,
+        addEligibilityRegions(strongRegions, evidence, RegionEvidenceSource.ADDITIONAL_QUALIFICATION,
                 text(fields, "addAplyQlfcCndCn"), 94, true);
         addTitleRegions(strongRegions, evidence, text(fields, "plcyNm", "title"));
-        strongRegions.addAll(addZipEvidence(fields, evidence));
+        // zipCd는 온통청년 전용 코드 검증 체계가 확정되기 전까지 신청 지역으로 쓰지 않는다.
+        addZipEvidence(fields, evidence);
 
         if (strongRegions.isEmpty()) {
-            Set<RegionCode> support = extractor.extract(text(fields, "plcySprtCn", "summary"), true);
-            support.forEach(region -> evidence.add(new PolicyRegionClassificationEvidence(
-                    RegionEvidenceSource.SUPPORT_CONTENT, text(fields, "plcySprtCn", "summary"),
-                    region.displayName(), 62, "지원 내용의 명시적 지역 문맥")));
-            strongRegions.addAll(support);
-
-            Set<RegionCode> description = extractor.extract(text(fields, "plcyExplnCn"), true);
-            description.forEach(region -> evidence.add(new PolicyRegionClassificationEvidence(
-                    RegionEvidenceSource.POLICY_DESCRIPTION, text(fields, "plcyExplnCn"),
-                    region.displayName(), 58, "정책 설명의 명시적 지역 문맥")));
-            strongRegions.addAll(description);
+            addEligibilityRegions(strongRegions, evidence, RegionEvidenceSource.SUPPORT_CONTENT,
+                    text(fields, "plcySprtCn", "summary"), 62, true);
+            addEligibilityRegions(strongRegions, evidence, RegionEvidenceSource.POLICY_DESCRIPTION,
+                    text(fields, "plcyExplnCn"), 58, true);
         }
 
         InstitutionRegionResult supervising = institutionResolver.analyze(text(fields, "sprvsnInstCdNm", "agencyName"));
@@ -106,19 +102,23 @@ public class PolicyGeographyClassifier {
         return result(scope, compact, confidence, evidence, conflicts, !conflicts.isEmpty());
     }
 
-    private void addRegions(Set<RegionCode> regions, List<PolicyRegionClassificationEvidence> evidence,
-                            RegionEvidenceSource source, String text, int confidence, boolean contextualShortAlias) {
-        Set<RegionCode> found = extractor.extract(text, contextualShortAlias);
-        found.forEach(region -> evidence.add(new PolicyRegionClassificationEvidence(
-                source, text, region.displayName(), confidence, "공식 행정구역명 또는 명시적 거주 문맥")));
-        regions.addAll(found);
+    private void addEligibilityRegions(Set<RegionCode> regions, List<PolicyRegionClassificationEvidence> evidence,
+                                       RegionEvidenceSource source, String text, int confidence, boolean contextualShortAlias) {
+        for (PolicyRegionMention mention : extractor.extractMentions(text, contextualShortAlias)) {
+            evidence.add(new PolicyRegionClassificationEvidence(source, text, mention.region().displayName(),
+                    Math.max(confidence, mention.confidence()), mention.reason(), mention.role()));
+            if (mention.role() == PolicyRegionMentionRole.RESIDENCE_ELIGIBILITY
+                    || mention.role() == PolicyRegionMentionRole.SERVICE_ELIGIBILITY) {
+                regions.add(mention.region());
+            }
+        }
     }
 
     private void addTitleRegions(Set<RegionCode> regions, List<PolicyRegionClassificationEvidence> evidence, String title) {
         Set<RegionCode> found = extractor.extractFromTitle(title);
         found.forEach(region -> evidence.add(new PolicyRegionClassificationEvidence(
                 RegionEvidenceSource.POLICY_TITLE, title, region.displayName(), 92,
-                "정책 제목의 공식 행정구역명 또는 유일 시·군·구 별칭")));
+                "정책 제목의 공식 행정구역명 또는 유일 시·군·구 별칭", PolicyRegionMentionRole.RESIDENCE_ELIGIBILITY)));
         regions.addAll(found);
     }
 
@@ -135,26 +135,26 @@ public class PolicyGeographyClassifier {
         return false;
     }
 
-    private Set<RegionCode> addZipEvidence(Map<String, Object> fields, List<PolicyRegionClassificationEvidence> evidence) {
+    private void addZipEvidence(Map<String, Object> fields, List<PolicyRegionClassificationEvidence> evidence) {
         String zipCd = text(fields, "zipCd");
         if (!StringUtils.hasText(zipCd)) {
-            return Set.of();
+            return;
         }
         Set<RegionCode> mapped = catalog.byZipCd(zipCd);
         if (mapped.isEmpty()) {
             evidence.add(new PolicyRegionClassificationEvidence(RegionEvidenceSource.ZIP_CODE,
-                    zipCd, "", 0, "UNMAPPED_EXTERNAL_CODE"));
+                    zipCd, "", 0, "UNMAPPED_EXTERNAL_CODE", PolicyRegionMentionRole.REFERENCE_ONLY));
         } else {
             mapped.forEach(region -> evidence.add(new PolicyRegionClassificationEvidence(RegionEvidenceSource.ZIP_CODE,
-                    zipCd, region.displayName(), 98, "검증된 온통청년 외부 지역 코드 매핑")));
+                    zipCd, region.displayName(), 10, "zipCd는 공식 검증 전까지 신청 지역 생성 근거에서 제외", PolicyRegionMentionRole.REFERENCE_ONLY)));
         }
-        return mapped;
     }
 
     private void addInstitutionEvidence(Set<RegionCode> regions, List<PolicyRegionClassificationEvidence> evidence,
                                         RegionEvidenceSource source, String raw, InstitutionRegionResult result) {
         if (result.type() == InstitutionRegionType.NATIONAL_INSTITUTION) {
-            evidence.add(new PolicyRegionClassificationEvidence(source, raw, "", 50, "전국/중앙 기관 후보"));
+            evidence.add(new PolicyRegionClassificationEvidence(source, raw, "", 50, "전국/중앙 기관 후보",
+                    PolicyRegionMentionRole.INSTITUTION_LOCATION));
         }
         Set<RegionCode> regionsFromInstitution = new LinkedHashSet<>(result.regions());
         regionsFromInstitution.addAll(extractor.extractFromInstitution(raw));

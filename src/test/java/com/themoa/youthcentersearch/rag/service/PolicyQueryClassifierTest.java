@@ -2,6 +2,8 @@ package com.themoa.youthcentersearch.rag.service;
 
 import com.themoa.youthcentersearch.rag.dto.PolicySearchCondition;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchMode;
+import com.themoa.youthcentersearch.rag.dto.PolicyQuerySemantics;
+import com.themoa.youthcentersearch.rag.dto.SearchDomain;
 import com.themoa.youthcentersearch.rag.dto.SearchQueryType;
 import org.junit.jupiter.api.Test;
 
@@ -25,6 +27,16 @@ class PolicyQueryClassifierTest {
         PolicySearchCondition condition = condition(Set.of("청년", "정책"), Set.of("청년", "정책"), true);
 
         assertThat(classifier.classify("수원에 사는 청년 정책", condition)).isEqualTo(SearchQueryType.BROAD_DISCOVERY);
+    }
+
+    @Test
+    void negatedEmploymentTopicDoesNotClassifyAsTopicSearch() {
+        PolicySearchCondition condition = condition(Set.of("청년", "대학생", "취업"), Set.of("청년", "대학생", "취업"), true);
+        PolicyQuerySemantics semantics = new PolicyQuerySemantics("대학생이 신청 가능한 청년 지원 정책",
+                Set.of(), Set.of(SearchDomain.EMPLOYMENT), Set.of("대학생", "청년"), Set.of("취업"), true);
+
+        assertThat(classifier.classify("수원 22살 대학생이고 취업 생각은 없어", condition, semantics))
+                .isIn(SearchQueryType.BROAD_DISCOVERY, SearchQueryType.ELIGIBILITY_SEARCH);
     }
 
     private PolicySearchCondition condition(Set<String> keywords, Set<String> expanded, boolean regionExplicit) {

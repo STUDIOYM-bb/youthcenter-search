@@ -2,6 +2,8 @@ package com.themoa.youthcentersearch.rag.service;
 
 import com.themoa.youthcentersearch.rag.dto.PolicySearchCondition;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchMode;
+import com.themoa.youthcentersearch.rag.dto.PolicyQuerySemantics;
+import com.themoa.youthcentersearch.rag.dto.SearchDomain;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
@@ -40,5 +42,23 @@ class PolicySearchIntentBuilderTest {
         assertThat(intent.intentTerms()).contains("청년", "금융 지원", "생활비 지원");
         assertThat(intent.expandedIntentTerms()).contains("금융", "생활비", "지원금", "사회초년생");
         assertThat(intent.semanticQuery()).contains("사회초년생").contains("금융").doesNotContain("27살");
+    }
+
+    @Test
+    void employmentExclusionDoesNotBuildEmploymentIntentTerms() {
+        PolicySearchCondition condition = new PolicySearchCondition("경기도", "수원시", null, 22,
+                null, true, null, null, Set.of(), Set.of("청년", "대학생", "취업"), Set.of("청년", "대학생", "취업", "구직", "일자리"),
+                "수원", "EXACT", "SIGUNGU", Set.of(), true, true, false, true, false, false,
+                PolicySearchMode.HYBRID, 20);
+        PolicyQuerySemantics semantics = new PolicyQuerySemantics("대학생이 신청 가능한 청년 지원 정책",
+                Set.of(), Set.of(SearchDomain.EMPLOYMENT), Set.of("대학생", "청년"), Set.of("취업", "구직", "일자리", "면접"), true);
+
+        var intent = builder.build("수원 22살 대학생이고 취업 생각은 없어", condition, semantics);
+
+        assertThat(intent.conditionTerms()).contains("수원", "22살");
+        assertThat(intent.intentTerms()).doesNotContain("취업 지원", "구직 지원", "취업 준비");
+        assertThat(intent.expandedIntentTerms()).doesNotContain("취업", "구직", "일자리", "면접");
+        assertThat(intent.semanticQuery()).isEqualTo("대학생이 신청 가능한 청년 지원 정책");
+        assertThat(intent.semanticQuery()).doesNotContain("취업", "구직", "일자리");
     }
 }

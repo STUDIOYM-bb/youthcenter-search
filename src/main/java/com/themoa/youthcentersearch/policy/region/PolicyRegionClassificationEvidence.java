@@ -5,6 +5,11 @@ public record PolicyRegionClassificationEvidence(
         String rawValue,
         String matchedRegion,
         int confidence,
-        String reason
+        String reason,
+        PolicyRegionMentionRole role
 ) {
+    public PolicyRegionClassificationEvidence(RegionEvidenceSource source, String rawValue, String matchedRegion,
+                                              int confidence, String reason) {
+        this(source, rawValue, matchedRegion, confidence, reason, PolicyRegionMentionRole.UNKNOWN);
+    }
 }

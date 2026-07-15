@@ -2,6 +2,7 @@ package com.themoa.youthcentersearch.rag.dto;
 
 public enum CandidateSource {
     VECTOR_ORIGINAL_QUERY,
+    VECTOR_NORMALIZED_QUERY,
     VECTOR_INTENT_QUERY,
     VECTOR_EXPANDED_QUERY,
     VECTOR_CATEGORY_QUERY,

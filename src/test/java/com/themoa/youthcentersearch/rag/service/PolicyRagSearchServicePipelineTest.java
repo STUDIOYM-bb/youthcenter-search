@@ -86,34 +86,12 @@ class PolicyRagSearchServicePipelineTest {
                 Map.of(1, Set.of(CandidateSource.MYSQL_TITLE), 2, Set.of(CandidateSource.MYSQL_KEYWORD),
                         3, Set.of(CandidateSource.MYSQL_TITLE), 4, Set.of(CandidateSource.MYSQL_KEYWORD)),
                 Map.of(CandidateSource.MYSQL_TITLE, 2, CandidateSource.MYSQL_KEYWORD, 2)));
-        when(lexical.lexicalScore(any(Policy.class), any(PolicySearchCondition.class))).thenAnswer(invocation -> score((Policy) invocation.getArgument(0)));
-        when(lexical.titleExactScore(any(), any())).thenAnswer(invocation -> titleScore((Policy) invocation.getArgument(0)));
-        when(lexical.lexicalScore(any(Policy.class), org.mockito.ArgumentMatchers.<Set<String>>any())).thenAnswer(invocation -> score((Policy) invocation.getArgument(0)));
 
         RegionAliasCatalog aliases = new RegionAliasCatalog();
         RegionNormalizer normalizer = new RegionNormalizer(aliases);
         RegionCatalog catalog = new RegionCatalog(regionRepository(), aliases, normalizer);
         return new PolicyRagSearchService(parser, repository, vectorStoreProvider, properties,
                 new RegionMatchEvaluator(catalog, normalizer), lexical, new PolicySearchIntentBuilder());
-    }
-
-    private double score(Policy policy) {
-        return switch (policy.getId()) {
-            case 1 -> 0.85;
-            case 2 -> 0.1;
-            case 3 -> 0.85;
-            case 4 -> 0.75;
-            default -> 0.0;
-        };
-    }
-
-    private double titleScore(Policy policy) {
-        return switch (policy.getId()) {
-            case 1 -> 0.95;
-            case 3 -> 0.9;
-            case 4 -> 0.6;
-            default -> 0.0;
-        };
     }
 
     private PolicySearchCondition condition() {

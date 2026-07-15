@@ -1,5 +1,38 @@
 # RAG Search Flow
 
+## Query semantics and exclusions
+
+Natural language search now separates two concepts that must not be merged:
+
+- user state, such as `EMPLOYED`, `UNEMPLOYED`, or unknown
+- policy domains the user wants or explicitly excludes
+
+`PolicyQuerySemantics` carries the positive-only goal, desired domains, excluded
+domains, positive keywords, excluded keywords, and whether the query contains an
+explicit exclusion. The OpenAI parser may return these fields, but Java rule
+validation always re-checks explicit exclusions through
+`PolicyIntentPolarityDetector`.
+
+When an explicit exclusion is present, the search pipeline avoids using the raw
+query as the strong vector query because negated words such as `취업 생각은 없어`
+can still be close to employment policies in embedding space. The pipeline uses
+`VECTOR_NORMALIZED_QUERY` from `normalizedGoal` and builds
+`VECTOR_INTENT_QUERY` only from desired domains and positive keywords.
+
+Lexical search receives polarity-filtered intent terms. Excluded keywords and
+synonyms of excluded domains are not used for lexical candidate boosts.
+
+After vector, lexical, and region-eligible candidates are merged and condition
+filters are applied, `PolicyDomainClassifier` classifies each policy's primary
+domain from the policy category plus policy title/support/summary purpose.
+Policies whose primary domain is explicitly excluded are removed before final
+ranking. Secondary mentions, such as employment wording only in eligibility
+conditions, do not make a non-employment policy an employment-primary policy.
+
+This change only modifies query analysis, ranking, and filtering. Existing
+policy rows, search projections, embedding documents, Qdrant metadata, and
+Qdrant collections do not need to be rebuilt.
+
 사용자 검색은 저장된 정책 데이터만 사용한다.
 
 1. 사용자가 자연어 질의 입력

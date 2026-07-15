@@ -52,6 +52,18 @@
             "지원 형태": (c.supportTypes || []).join(", "),
             "핵심 키워드": data.diagnostics && data.diagnostics.coreKeywords,
             "확장 키워드": data.diagnostics && data.diagnostics.expandedKeywords,
+            "정규화된 검색 목적": data.diagnostics && data.diagnostics.normalizedGoal,
+            "원하는 분야": data.diagnostics && data.diagnostics.desiredDomains,
+            "제외 분야": data.diagnostics && data.diagnostics.excludedDomains,
+            "긍정 키워드": data.diagnostics && data.diagnostics.positiveKeywords,
+            "제외 키워드": data.diagnostics && data.diagnostics.excludedKeywords,
+            "명시적 제외 여부": data.diagnostics && yesNo(data.diagnostics.explicitExclusion),
+            "Semantic Query": data.diagnostics && data.diagnostics.semanticQuery,
+            "Original Vector 사용": data.diagnostics && yesNo(data.diagnostics.originalVectorUsed),
+            "Qdrant 정규화 후보": data.diagnostics && data.diagnostics.normalizedVectorCandidateCount,
+            "제외 분야 제거": data.diagnostics && data.diagnostics.excludedDomainFilteredCount,
+            "의도 분석 충돌": data.diagnostics && yesNo(data.diagnostics.semanticConflictDetected),
+            "의도 분석 충돌 사유": data.diagnostics && data.diagnostics.semanticConflictReason,
             "Qdrant 후보 수": data.diagnostics && data.diagnostics.vectorCandidateCount,
             "Qdrant 원문 후보": data.diagnostics && data.diagnostics.originalVectorCandidateCount,
             "Qdrant 의도 후보": data.diagnostics && data.diagnostics.intentVectorCandidateCount,
@@ -104,6 +116,10 @@
                 <h3>${safe(item.title)}</h3>
                 <div class="meta-list">
                     <span>분야: ${safe(item.category)}</span>
+                    <span>주요 정책 분야: ${safe(item.primaryDomain)}</span>
+                    <span>보조 정책 분야: ${safe((item.secondaryDomains || []).join(", "))}</span>
+                    <span>지원 의도: ${safe((item.supportIntents || []).join(", "))}</span>
+                    <span>제외 분야 통과: ${safe(item.excludedDomainPassed ? "통과" : "제외 대상")}</span>
                     <span>정책 적용 지역: ${safe(item.region)}</span>
                     <span>지역 판정: ${safe(item.regionMatchLabel || item.regionMatchDescription)}</span>
                     <span>지역 일치 사유: ${safe(item.regionMatchReason || item.regionMatchDescription)}</span>
@@ -125,6 +141,8 @@
                 <ul class="reason-list">${listItems(item.needCheckReasons)}</ul>
                 <strong>후보 검색 경로</strong>
                 <ul class="reason-list">${listItems(item.candidateSources)}</ul>
+                <strong>분야 판정 근거</strong>
+                <ul class="reason-list">${listItems(item.domainEvidence)}</ul>
                 <div class="button-row">
                     ${item.officialUrl ? `<a class="button-link" href="${escapeAttr(item.officialUrl)}" target="_blank" rel="noreferrer">공식 링크</a>` : ""}
                     <button type="button" class="secondary detail-button" data-id="${escapeAttr(item.policyId)}">상세보기</button>

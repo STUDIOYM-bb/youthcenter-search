@@ -1,6 +1,7 @@
 package com.themoa.youthcentersearch.rag.service;
 
 import com.themoa.youthcentersearch.rag.dto.PolicySearchCondition;
+import com.themoa.youthcentersearch.rag.dto.PolicyQuerySemantics;
 import com.themoa.youthcentersearch.rag.dto.SearchQueryType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -22,7 +23,14 @@ public class PolicyQueryClassifier {
     }
 
     public SearchQueryType classify(String query, PolicySearchCondition condition) {
+        return classify(query, condition, PolicyQuerySemantics.empty());
+    }
+
+    public SearchQueryType classify(String query, PolicySearchCondition condition, PolicyQuerySemantics semantics) {
+        PolicyQuerySemantics effective = semantics == null ? PolicyQuerySemantics.empty() : semantics;
+        String topicQuery = effective.explicitExclusion() ? effective.normalizedGoal() : query;
         String normalized = normalizer.normalize(query);
+        String positiveNormalized = normalizer.normalize(topicQuery);
         if (!StringUtils.hasText(normalized)) {
             return SearchQueryType.BROAD_DISCOVERY;
         }
@@ -33,10 +41,10 @@ public class PolicyQueryClassifier {
                 .filter(StringUtils::hasText)
                 .filter(term -> !BROAD_WORDS.contains(term))
                 .count();
-        if (looksLikePolicyName(query, normalized, condition, hasCondition)) {
+        if (looksLikePolicyName(query, positiveNormalized, condition, hasCondition)) {
             return SearchQueryType.POLICY_NAME;
         }
-        if (hasCondition && !hasTopicHint(normalized)) {
+        if (hasCondition && !hasTopicHint(positiveNormalized)) {
             return SearchQueryType.BROAD_DISCOVERY;
         }
         if (hasCondition && meaningful > 0) {

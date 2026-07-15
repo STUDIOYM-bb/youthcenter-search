@@ -26,8 +26,9 @@ class StrictPolicyRegionMentionExtractorTest {
 
     @Test
     void officialMunicipalityNameIsRecognizedButCommonNounWithoutSuffixIsNot() {
-        assertThat(extractor.extract("예산군 청년 지원", false))
-                .anyMatch(region -> "예산군".equals(region.getCity()));
+        assertThat(extractor.extractMentions("예산군 청년 지원", false))
+                .anyMatch(mention -> "예산군".equals(mention.region().getCity())
+                        && mention.role() == PolicyRegionMentionRole.REFERENCE_ONLY);
         assertThat(extractor.extract("사업 예산 확보 및 청년 역량 함양", false))
                 .noneMatch(region -> "예산군".equals(region.getCity()) || "함양군".equals(region.getCity()));
     }

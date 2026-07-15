@@ -16,7 +16,7 @@ public record PolicyRegionClassificationResult(
         boolean needsReview,
         String classifierVersion
 ) {
-    public static final String VERSION = "policy-region-v3";
+    public static final String VERSION = "policy-region-v4";
 
     public PolicyRegionResolution toResolution() {
         Set<RegionCode> safeRegions = regions == null ? Set.of() : regions;

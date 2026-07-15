@@ -4,7 +4,6 @@ import com.themoa.youthcentersearch.policy.domain.Policy;
 import com.themoa.youthcentersearch.policy.domain.PolicyCondition;
 import com.themoa.youthcentersearch.policy.domain.PolicySource;
 import com.themoa.youthcentersearch.policy.domain.PolicyRawData;
-import com.themoa.youthcentersearch.policy.region.PolicyRegionResolver;
 import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
 import com.themoa.youthcentersearch.youthcenter.dto.parsed.YouthPolicyItem;
 import org.springframework.stereotype.Service;
@@ -18,20 +17,17 @@ import java.util.Map;
 public class PolicyPersistenceService {
     private final PolicyRepository policyRepository;
     private final PolicyFieldNormalizer normalizer;
-    private final PolicyRegionResolver regionResolver;
-    private final PolicyRegionSyncService regionSyncService;
     private final PolicySourceSnapshotService snapshotService;
+    private final PolicyApplicabilityClassificationService applicabilityClassificationService;
 
     public PolicyPersistenceService(PolicyRepository policyRepository,
                                     PolicyFieldNormalizer normalizer,
-                                    PolicyRegionResolver regionResolver,
-                                    PolicyRegionSyncService regionSyncService,
-                                    PolicySourceSnapshotService snapshotService) {
+                                    PolicySourceSnapshotService snapshotService,
+                                    PolicyApplicabilityClassificationService applicabilityClassificationService) {
         this.policyRepository = policyRepository;
         this.normalizer = normalizer;
-        this.regionResolver = regionResolver;
-        this.regionSyncService = regionSyncService;
         this.snapshotService = snapshotService;
+        this.applicabilityClassificationService = applicabilityClassificationService;
     }
 
     @Transactional
@@ -97,8 +93,8 @@ public class PolicyPersistenceService {
         );
 
         Policy saved = policyRepository.save(policy);
-        regionSyncService.syncRegions(saved, regionResolver.resolve(fields));
         snapshotService.upsert(saved.getId(), sourcePolicyId, rawData, fields);
+        applicabilityClassificationService.classifyFromFields(saved, fields, true);
         return new PolicyUpsertResult(saved.getId(), inserted);
     }
 

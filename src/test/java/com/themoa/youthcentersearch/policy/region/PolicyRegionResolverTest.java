@@ -72,8 +72,9 @@ class PolicyRegionResolverTest {
 
     @Test
     void parsesZipCd() {
-        assertThat(resolver.resolve(Map.of("zipCd", "41111,41113,41115,41117")).regionNames())
-                .containsExactly("경기도 수원시");
+        assertThat(resolver.resolve(Map.of("zipCd", "41111,41113,41115,41117")).regionNames()).isEmpty();
+        assertThat(resolver.resolve(Map.of("zipCd", "41111,41113,41115,41117")).evidence())
+                .anyMatch(evidence -> evidence.source() == RegionEvidenceSource.ZIP_CODE);
         assertThat(resolver.resolve(Map.of("zipCd", "not-a-code")).scope()).isEqualTo(RegionScope.UNKNOWN);
     }
 

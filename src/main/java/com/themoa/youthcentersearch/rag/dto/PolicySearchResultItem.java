@@ -36,6 +36,11 @@ public record PolicySearchResultItem(
         String employmentMatchReason,
         String studentMatchStatus,
         String studentMatchReason,
-        double topicScore
+        double topicScore,
+        String primaryDomain,
+        List<String> secondaryDomains,
+        List<String> supportIntents,
+        List<String> domainEvidence,
+        boolean excludedDomainPassed
 ) {
 }

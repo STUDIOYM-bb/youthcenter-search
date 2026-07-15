@@ -1,31 +1,27 @@
 package com.themoa.youthcentersearch.rag.service;
 
-import com.themoa.youthcentersearch.policy.domain.Policy;
-import com.themoa.youthcentersearch.policy.domain.PolicyCondition;
 import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
 import com.themoa.youthcentersearch.rag.dto.CandidateSource;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchCondition;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchIntent;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.util.EnumMap;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * 메모리 BM25 인덱스를 통해 MySQL 기반 lexical 후보를 반환한다.
+ * 과거 title/summary contains 점수는 제거하고, PolicyLexicalIndex가 계산한 필드 가중치 BM25와 제목 매칭만 노출한다.
+ */
 @Service
 public class PolicyLexicalSearchService {
-    private final PolicyRepository policyRepository;
-    private final PolicyKeywordNormalizer normalizer;
     private final PolicyLexicalIndexBuilder indexBuilder;
 
     public PolicyLexicalSearchService(PolicyRepository policyRepository, PolicyKeywordNormalizer normalizer,
                                       PolicyLexicalIndexBuilder indexBuilder) {
-        this.policyRepository = policyRepository;
-        this.normalizer = normalizer;
         this.indexBuilder = indexBuilder;
     }
 
@@ -53,97 +49,6 @@ public class PolicyLexicalSearchService {
         }
         List<Integer> sortedIds = candidates.stream().map(PolicyLexicalCandidate::policyId).toList();
         return new LexicalSearchResult(sortedIds, lexicalScores, titleScores, candidateSources, sourceCounts);
-    }
-
-    public double lexicalScore(Policy policy, PolicySearchCondition condition) {
-        double score = 0;
-        String title = normalized(policy.getTitle());
-        String summary = normalized(policy.getSummary());
-        String agency = normalized(policy.getAgencyName());
-        PolicyCondition pc = policy.getCondition();
-        String conditionSummary = pc == null ? "" : normalized(pc.getConditionSummary());
-        for (String keyword : condition.expandedKeywords()) {
-            String normalized = normalizer.normalize(keyword);
-            if (!StringUtils.hasText(normalized)) continue;
-            if (title.contains(normalized)) score += 0.55;
-            if (summary.contains(normalized)) score += 0.25;
-            if (conditionSummary.contains(normalized)) score += 0.15;
-            if (agency.contains(normalized)) score += 0.05;
-        }
-        return Math.min(1.0, score);
-    }
-
-    public double lexicalScore(Policy policy, Set<String> terms) {
-        double score = 0;
-        String title = normalized(policy.getTitle());
-        String summary = normalized(policy.getSummary());
-        String agency = normalized(policy.getAgencyName());
-        String category = policy.getCategory() == null ? "" : normalized(policy.getCategory().name());
-        PolicyCondition pc = policy.getCondition();
-        String conditionSummary = pc == null ? "" : normalized(pc.getConditionSummary());
-        for (String term : terms) {
-            String normalized = normalizer.normalize(term);
-            if (!StringUtils.hasText(normalized)) continue;
-            if (title.contains(normalized)) score += 0.55;
-            if (summary.contains(normalized)) score += 0.25;
-            if (conditionSummary.contains(normalized)) score += 0.2;
-            if (category.contains(normalized)) score += 0.15;
-            if (agency.contains(normalized)) score += 0.05;
-        }
-        return Math.min(1.0, score);
-    }
-
-    public double titleExactScore(Policy policy, PolicySearchCondition condition) {
-        String title = normalized(policy.getTitle());
-        Set<String> keywords = condition.keywords();
-        java.util.List<String> meaningful = keywords.stream()
-                .map(normalizer::normalize)
-                .filter(StringUtils::hasText)
-                .filter(term -> !Set.of("청년", "정책", "지원").contains(term))
-                .distinct()
-                .toList();
-        if (!meaningful.isEmpty() && meaningful.stream().allMatch(title::contains)) {
-            return meaningful.size() >= 2 ? 0.95 : 0.85;
-        }
-        double score = 0;
-        for (String keyword : keywords) {
-            String normalized = normalizer.normalize(keyword);
-            if (!StringUtils.hasText(normalized)) continue;
-            if (title.equals(normalized)) {
-                return 1.0;
-            }
-            if (title.startsWith(normalized) || normalized.startsWith(title)) {
-                score = Math.max(score, 0.9);
-                continue;
-            }
-            if (title.contains(normalized)) {
-                score += "청년".equals(keyword) ? 0.05 : 0.6;
-            }
-        }
-        return Math.min(1.0, score);
-    }
-
-    public Set<CandidateSource> lexicalSources(Policy policy, List<String> terms) {
-        Set<CandidateSource> sources = EnumSet.noneOf(CandidateSource.class);
-        String title = normalized(policy.getTitle());
-        String summary = normalized(policy.getSummary());
-        String agency = normalized(policy.getAgencyName());
-        String category = policy.getCategory() == null ? "" : normalized(policy.getCategory().name());
-        PolicyCondition pc = policy.getCondition();
-        String conditionSummary = pc == null ? "" : normalized(pc.getConditionSummary());
-        for (String term : terms) {
-            String normalized = normalizer.normalize(term);
-            if (!StringUtils.hasText(normalized)) continue;
-            if (title.contains(normalized)) sources.add(CandidateSource.MYSQL_TITLE);
-            if (summary.contains(normalized)) sources.add(CandidateSource.MYSQL_SUMMARY);
-            if (conditionSummary.contains(normalized) || agency.contains(normalized)) sources.add(CandidateSource.MYSQL_KEYWORD);
-            if (category.contains(normalized)) sources.add(CandidateSource.MYSQL_CATEGORY);
-        }
-        return sources;
-    }
-
-    private String normalized(String value) {
-        return normalizer.normalize(value);
     }
 
     public record LexicalSearchResult(List<Integer> policyIds,

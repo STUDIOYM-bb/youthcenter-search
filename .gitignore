@@ -25,6 +25,7 @@ bin/
 out/
 !**/src/main/**/out/
 !**/src/test/**/out/
+__MACOSX/
 
 ### NetBeans ###
 /nbproject/private/
@@ -53,6 +54,7 @@ api-responses/
 # Build
 build/
 .gradle/
+*.jar
 
 # Docker/local output
 out/

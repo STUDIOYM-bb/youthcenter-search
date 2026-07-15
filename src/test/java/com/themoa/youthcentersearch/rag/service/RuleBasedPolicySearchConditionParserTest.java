@@ -27,7 +27,8 @@ class RuleBasedPolicySearchConditionParserTest {
         assertThat(condition.city()).isEqualTo("수원시");
         assertThat(condition.age()).isEqualTo(27);
         assertThat(condition.employmentStatus()).isEqualTo("UNEMPLOYED");
-        assertThat(condition.keywords()).contains("청년", "지원금", "취업");
+        assertThat(condition.keywords()).contains("청년", "지원금");
+        assertThat(condition.keywords()).doesNotContain("취업", "구직");
     }
 
     @Test

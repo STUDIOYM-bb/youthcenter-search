@@ -71,6 +71,18 @@ public record PolicySearchDiagnostics(
         int exactSigunguSelectedCount,
         int parentSidoSelectedCount,
         int nationwideSelectedCount,
-        int unknownReviewResultCount
+        int unknownReviewResultCount,
+        String normalizedGoal,
+        String desiredDomains,
+        String excludedDomains,
+        String positiveKeywords,
+        String excludedKeywords,
+        boolean explicitExclusion,
+        String semanticQuery,
+        boolean originalVectorUsed,
+        int normalizedVectorCandidateCount,
+        int excludedDomainFilteredCount,
+        boolean semanticConflictDetected,
+        String semanticConflictReason
 ) {
 }
