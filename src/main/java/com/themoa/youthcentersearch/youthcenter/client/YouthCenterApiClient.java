@@ -106,7 +106,7 @@ public class YouthCenterApiClient {
                     break;
                 }
                 if (redirects >= properties.getMaximumRedirects()) {
-                    warnings.add("理쒕? Redirect ?잛닔瑜?珥덇낵?덉뒿?덈떎.");
+                    warnings.add("최대 Redirect 횟수를 초과했습니다.");
                     break;
                 }
                 URI next = current.resolve(location.orElse(""));
@@ -115,10 +115,10 @@ public class YouthCenterApiClient {
                 current = next;
             }
         } catch (IOException ex) {
-            throw new YouthCenterApiException("?몃? API ?곌껐 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.", ex);
+            throw new YouthCenterApiException("외부 API 연결 중 오류가 발생했습니다.", ex);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new YouthCenterApiException("?몃? API ?붿껌??以묐떒?섏뿀?듬땲??", ex);
+            throw new YouthCenterApiException("외부 API 요청이 중단되었습니다.", ex);
         }
 
         long elapsed = Duration.between(start, Instant.now()).toMillis();
@@ -185,10 +185,10 @@ public class YouthCenterApiClient {
 
     private static void addRedirectWarnings(URI from, URI to, List<String> warnings) {
         if ("https".equalsIgnoreCase(from.getScheme()) && "http".equalsIgnoreCase(to.getScheme())) {
-            warnings.add("HTTPS?먯꽌 HTTP濡??대젮媛??Redirect?낅땲??");
+            warnings.add("HTTPS에서 HTTP로 내려가는 Redirect입니다.");
         }
         if (!from.getHost().equalsIgnoreCase(to.getHost())) {
-            warnings.add("?ㅻⅨ ?몄뒪?몃줈 ?대룞?섎뒗 Redirect?낅땲??");
+            warnings.add("다른 호스트로 이동하는 Redirect입니다.");
         }
         if (to.getPort() > 0 && to.getPort() != 443 && to.getPort() != 80) {
             warnings.add("?쇰컲?곸씠吏 ?딆? ?ы듃濡??대룞?섎뒗 Redirect?낅땲?? " + to.getPort());

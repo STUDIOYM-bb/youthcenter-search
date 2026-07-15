@@ -4,12 +4,10 @@ import com.themoa.youthcentersearch.policy.domain.Policy;
 import com.themoa.youthcentersearch.policy.domain.PolicyCondition;
 import com.themoa.youthcentersearch.policy.domain.PolicyRegion;
 import com.themoa.youthcentersearch.policy.region.RegionCompatibility;
-import com.themoa.youthcentersearch.policy.region.RegionEligiblePolicyCandidate;
 import com.themoa.youthcentersearch.policy.region.RegionMatchEvaluator;
 import com.themoa.youthcentersearch.policy.region.RegionMatchResult;
 import com.themoa.youthcentersearch.policy.region.ResolvedUserRegion;
 import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
-import com.themoa.youthcentersearch.policy.service.RegionEligiblePolicyCandidateService;
 import com.themoa.youthcentersearch.common.exception.YouthCenterApiException;
 import com.themoa.youthcentersearch.rag.config.RagProperties;
 import com.themoa.youthcentersearch.rag.dto.CandidateSource;
@@ -34,12 +32,7 @@ import com.themoa.youthcentersearch.rag.dto.TargetStageMatchResult;
 import com.themoa.youthcentersearch.rag.dto.TopicRelevanceScore;
 import com.themoa.youthcentersearch.rag.dto.UserEmploymentStatus;
 import com.themoa.youthcentersearch.rag.dto.UserEmploymentStatusResult;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -48,10 +41,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -64,54 +55,51 @@ public class PolicyRagSearchService {
     private static final String STUDENT_NOT_MATCHED = "STUDENT_NOT_MATCHED";
 
     private final PolicyRepository policyRepository;
-    private final ObjectProvider<VectorStore> vectorStoreProvider;
     private final RagProperties properties;
     private final RegionMatchEvaluator regionMatchEvaluator;
-    private final PolicyLexicalSearchService lexicalSearchService;
     private final PolicySearchIntentBuilder intentBuilder;
     private final PolicyDomainClassifier domainClassifier;
     private final PolicySearchPlanService planService;
+    private final PolicySearchCandidateRetriever candidateRetriever;
+    private final PolicySearchDiagnosticsFactory diagnosticsFactory;
     private final SearchDomainIntentPolicy domainIntentPolicy;
     private final PolicyTargetAudienceClassifier targetAudienceClassifier;
     private final PolicyTargetEligibilityFilter targetEligibilityFilter;
     private final PolicyEmploymentAudienceClassifier employmentAudienceClassifier;
     private final UserEmploymentStatusDetector userEmploymentStatusDetector;
     private final UserEducationStageDetector userEducationStageDetector;
-    private final RegionEligiblePolicyCandidateService regionEligiblePolicyCandidateService;
     private final RegionCoverageResultSelector regionCoverageResultSelector;
 
     @Autowired
     public PolicyRagSearchService(PolicyRepository policyRepository,
-                                  ObjectProvider<VectorStore> vectorStoreProvider,
                                   RagProperties properties,
                                   RegionMatchEvaluator regionMatchEvaluator,
-                                  PolicyLexicalSearchService lexicalSearchService,
                                   PolicySearchIntentBuilder intentBuilder,
                                   PolicyDomainClassifier domainClassifier,
                                   PolicySearchPlanService planService,
+                                  PolicySearchCandidateRetriever candidateRetriever,
+                                  PolicySearchDiagnosticsFactory diagnosticsFactory,
                                   SearchDomainIntentPolicy domainIntentPolicy,
                                   PolicyTargetAudienceClassifier targetAudienceClassifier,
                                   PolicyTargetEligibilityFilter targetEligibilityFilter,
                                   PolicyEmploymentAudienceClassifier employmentAudienceClassifier,
                                   UserEmploymentStatusDetector userEmploymentStatusDetector,
                                   UserEducationStageDetector userEducationStageDetector,
-                                  RegionEligiblePolicyCandidateService regionEligiblePolicyCandidateService,
                                   RegionCoverageResultSelector regionCoverageResultSelector) {
         this.policyRepository = policyRepository;
-        this.vectorStoreProvider = vectorStoreProvider;
         this.properties = properties;
         this.regionMatchEvaluator = regionMatchEvaluator;
-        this.lexicalSearchService = lexicalSearchService;
         this.intentBuilder = intentBuilder;
         this.domainClassifier = domainClassifier;
         this.planService = planService;
+        this.candidateRetriever = candidateRetriever;
+        this.diagnosticsFactory = diagnosticsFactory;
         this.domainIntentPolicy = domainIntentPolicy;
         this.targetAudienceClassifier = targetAudienceClassifier;
         this.targetEligibilityFilter = targetEligibilityFilter;
         this.employmentAudienceClassifier = employmentAudienceClassifier;
         this.userEmploymentStatusDetector = userEmploymentStatusDetector;
         this.userEducationStageDetector = userEducationStageDetector;
-        this.regionEligiblePolicyCandidateService = regionEligiblePolicyCandidateService;
         this.regionCoverageResultSelector = regionCoverageResultSelector;
     }
 
@@ -134,103 +122,14 @@ public class PolicyRagSearchService {
         SearchQueryType queryType = plan.queryType();
         ResolvedUserRegion userRegion = regionMatchEvaluator.resolveUserRegion(condition.province(), condition.city(), condition.district(),
                 condition.regionLevel());
-        boolean regionPoolApplied = condition.regionExplicit() && regionEligiblePolicyCandidateService != null;
-        List<RegionEligiblePolicyCandidate> regionEligibleCandidates = regionPoolApplied
-                ? regionEligiblePolicyCandidateService.findEligibleCandidates(userRegion)
-                : List.of();
-        Set<Integer> regionEligibleIds = regionEligibleCandidates.stream()
-                .map(RegionEligiblePolicyCandidate::policyId)
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        RegionPoolCounts regionPoolCounts = RegionPoolCounts.from(regionEligibleCandidates);
-        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
-        boolean mysqlFallbackUsed = false;
-        boolean retried = false;
         String fallbackReason = null;
-        Map<CandidateSource, List<Document>> vectorCandidatesBySource = new EnumMap<>(CandidateSource.class);
-
-        if (properties.isEnabled() && vectorStore != null) {
-            if (!plan.explicitExclusion()) {
-                vectorCandidatesBySource.put(CandidateSource.VECTOR_ORIGINAL_QUERY,
-                        vectorSearch(vectorStore, plan.originalQuery(), properties.getSearch().getTopK(), true));
-            } else {
-                vectorCandidatesBySource.put(CandidateSource.VECTOR_NORMALIZED_QUERY,
-                        vectorSearch(vectorStore, plan.normalizedGoal(), properties.getSearch().getTopK(), true));
-            }
-            String secondQuery = switch (queryType) {
-                case POLICY_NAME -> intent.originalQuery();
-                case BROAD_DISCOVERY -> categoryQuery(condition, intent);
-                case TOPIC_SEARCH, ELIGIBILITY_SEARCH -> intent.semanticQuery();
-            };
-            if (!secondQuery.equals(plan.originalQuery())) {
-                vectorCandidatesBySource.put(CandidateSource.VECTOR_INTENT_QUERY,
-                        vectorSearch(vectorStore, secondQuery, properties.getSearch().getTopK(), true));
-            }
-            int vectorCandidateCount = vectorCandidatesBySource.values().stream().mapToInt(List::size).sum();
-            if (vectorCandidateCount < resultSize) {
-                retried = true;
-                vectorCandidatesBySource.put(CandidateSource.VECTOR_INTENT_QUERY,
-                        vectorSearch(vectorStore, secondQuery, properties.getSearch().getRetryTopK(), true));
-            }
-            if (vectorCandidatesBySource.values().stream().allMatch(List::isEmpty)) {
-                retried = true;
-                fallbackReason = "VECTOR_THRESHOLD_EMPTY";
-                vectorCandidatesBySource.put(CandidateSource.VECTOR_INTENT_QUERY,
-                        vectorSearch(vectorStore, secondQuery, properties.getSearch().getRetryTopK(), false));
-            }
-        } else {
-            fallbackReason = "VECTOR_SEARCH_DISABLED";
-        }
-
-        Map<Integer, Double> semanticScores = semanticScores(vectorCandidatesBySource);
-        Map<Integer, Set<CandidateSource>> candidateSources = candidateSources(vectorCandidatesBySource);
-        var lexical = lexicalSearchService.search(condition, intent, properties.getSearch().getRetryTopK());
-        Map<Integer, Double> lexicalScores = new LinkedHashMap<>(lexical.lexicalScores());
-        Map<Integer, Double> titleExactScores = new LinkedHashMap<>(lexical.titleExactScores());
-        lexical.candidateSources().forEach((policyId, sources) -> {
-            Set<CandidateSource> merged = candidateSources.computeIfAbsent(policyId, ignored -> EnumSet.noneOf(CandidateSource.class));
-            merged.addAll(sources);
-            merged.add(CandidateSource.LEXICAL_INDEX);
-            double titleScore = titleExactScores.getOrDefault(policyId, 0.0);
-            if (titleScore >= 1.0) {
-                merged.add(CandidateSource.EXACT_TITLE);
-            } else if (titleScore >= 0.75) {
-                merged.add(CandidateSource.TITLE_PHRASE);
-            }
-        });
-        LinkedHashSet<Integer> mergedIds = new LinkedHashSet<>(semanticScores.keySet());
-        int beforeLexicalMerge = mergedIds.size();
-        mergedIds.addAll(lexical.policyIds());
-        if (queryType == SearchQueryType.BROAD_DISCOVERY || queryType == SearchQueryType.ELIGIBILITY_SEARCH) {
-            List<Integer> broadIds = regionPoolApplied
-                    ? regionEligibleIds.stream().toList()
-                    : policyRepository.findActivePolicyIds(PageRequest.of(0,
-                    Math.max(properties.getSearch().getRetryTopK(), (page + 2) * size * 5)));
-            broadIds.forEach(id -> candidateSources.computeIfAbsent(id, ignored -> EnumSet.noneOf(CandidateSource.class))
-                    .add(CandidateSource.BROAD_ELIGIBLE_POOL));
-            mergedIds.addAll(broadIds);
-        }
-        if (regionPoolApplied) {
-            mergedIds.removeIf(id -> !regionEligibleIds.contains(id));
-        }
-        int rawCandidateCount = vectorCandidatesBySource.values().stream().mapToInt(List::size).sum()
-                + lexical.policyIds().size()
-                + (int) candidateSources.entrySet().stream()
-                .filter(entry -> entry.getValue().contains(CandidateSource.BROAD_ELIGIBLE_POOL))
-                .count();
-        int duplicateCandidateCount = Math.max(0, rawCandidateCount - mergedIds.size());
-        List<Policy> policies = mergedIds.isEmpty()
-                ? List.of()
-                : policyRepository.findWithRelationsByIdIn(new ArrayList<>(mergedIds));
-        if (policies.isEmpty() && properties.getSearch().isMysqlFallbackEnabled()) {
-            mysqlFallbackUsed = true;
-            fallbackReason = fallbackReason == null ? "NO_CANDIDATES" : fallbackReason;
-            List<Integer> fallbackIds = regionPoolApplied
-                    ? regionEligibleIds.stream().limit(properties.getSearch().getRetryTopK()).toList()
-                    : policyRepository.findActivePolicyIds(PageRequest.of(0, properties.getSearch().getRetryTopK()));
-            policies = policyRepository.findWithRelationsByIdIn(fallbackIds);
-            fallbackIds.forEach(id -> candidateSources.computeIfAbsent(id, ignored -> EnumSet.noneOf(CandidateSource.class))
-                    .add(CandidateSource.MYSQL_FALLBACK));
-        }
+        PolicyCandidateCollection candidates = candidateRetriever.retrieve(plan, intent, userRegion, page, size, resultSize);
+        List<Policy> policies = candidates.policies();
+        Map<Integer, Double> semanticScores = candidates.semanticScores();
+        Map<Integer, Double> lexicalScores = candidates.lexicalScores();
+        Map<Integer, Double> titleExactScores = candidates.titleExactScores();
+        Map<Integer, Set<CandidateSource>> candidateSources = candidates.candidateSources();
+        CandidateCollectionMetrics candidateMetrics = candidates.metrics();
 
         Map<Integer, PolicyTargetAudienceClassification> targetAudienceByPolicyId = targetAudienceClassifier == null
                 ? Map.of()
@@ -239,7 +138,7 @@ public class PolicyRagSearchService {
                 ? Map.of()
                 : employmentAudienceClassifier.classify(policies.stream().map(Policy::getId).toList());
         UserEmploymentStatusResult userEmploymentStatus = userEmploymentStatusDetector.detect(request.query());
-        FilterCounters counters = new FilterCounters();
+        PolicySearchFilterMetrics counters = new PolicySearchFilterMetrics();
         List<PolicySearchResultItem> allResults = policies.stream()
                 .map(policy -> score(policy, condition, intent, userRegion,
                         semanticScores.getOrDefault(policy.getId(), 0.0),
@@ -261,112 +160,31 @@ public class PolicyRagSearchService {
         List<PolicySearchResultItem> results = orderedResults.subList(from, to);
         boolean hasNext = to < orderedResults.size();
         if (results.isEmpty()) {
-            fallbackReason = determineFallbackReason(fallbackReason, semanticScores.size(), lexical.policyIds().size(), counters, condition);
+            fallbackReason = determineFallbackReason(candidates.fallbackReason(), semanticScores.size(), candidateMetrics.lexicalCandidateCount(), counters, condition);
         } else {
             fallbackReason = null;
         }
 
-        PolicySearchDiagnostics diagnostics = new PolicySearchDiagnostics(
-                vectorCandidatesBySource.values().stream().mapToInt(List::size).sum(),
-                vectorCandidatesBySource.getOrDefault(CandidateSource.VECTOR_ORIGINAL_QUERY, List.of()).size(),
-                vectorCandidatesBySource.getOrDefault(CandidateSource.VECTOR_INTENT_QUERY, List.of()).size(),
-                vectorCandidatesBySource.getOrDefault(CandidateSource.VECTOR_EXPANDED_QUERY, List.of()).size(),
-                vectorCandidatesBySource.getOrDefault(CandidateSource.VECTOR_CATEGORY_QUERY, List.of()).size(),
-                lexical.policyIds().size(),
-                lexical.sourceCounts().getOrDefault(CandidateSource.MYSQL_TITLE, 0),
-                lexical.sourceCounts().getOrDefault(CandidateSource.MYSQL_KEYWORD, 0),
-                lexical.sourceCounts().getOrDefault(CandidateSource.MYSQL_SUMMARY, 0),
-                lexical.sourceCounts().getOrDefault(CandidateSource.MYSQL_CATEGORY, 0),
-                policies.size(),
-                duplicateCandidateCount,
-                counters.nationwideCandidateCount,
-                counters.provinceMatchedCount,
-                counters.cityMatchedCount,
-                counters.districtMatchedCount,
-                counters.exactSigunguMatchedCount,
-                counters.exactSidoMatchedCount,
-                counters.parentSidoMatchedCount,
-                counters.nationwideMatchedCount,
-                counters.multipleRegionMatchedCount,
-                counters.regionUnknownCount,
-                counters.regionNotMatchedCount,
-                counters.regionHardFilteredCount,
+        PolicySearchDiagnostics diagnostics = diagnosticsFactory.create(
+                plan,
+                intent,
+                parsed,
+                candidateMetrics,
+                counters,
+                selection,
+                results,
                 semanticScores.size(),
-                policies.size(),
-                counters.regionFiltered,
-                counters.topicThresholdPassedCount,
-                counters.topicThresholdFailedCount,
-                counters.topicFilteredCount,
-                counters.regionEligibleCount,
-                counters.regionIneligibleCount,
-                counters.ageMatchedCount,
-                counters.ageUnknownCount,
-                counters.ageMismatchedCount,
-                counters.employmentMatchedCount,
-                counters.employmentUnknownCount,
-                counters.employmentMismatchedCount,
-                counters.ageFiltered,
-                counters.employmentFiltered,
-                counters.studentFiltered,
-                counters.targetFiltered,
-                counters.applicationFiltered,
-                mysqlFallbackUsed ? Math.max(0, policies.size() - beforeLexicalMerge) : 0,
-                results.size(),
-                retried,
-                mysqlFallbackUsed,
-                condition.searchMode().name(),
-                condition.regionExplicit(),
-                condition.ageExplicit(),
-                condition.employmentExplicit(),
-                condition.studentExplicit(),
-                condition.regionExplicit(),
-                condition.ageExplicit(),
-                condition.employmentExplicit(),
-                condition.studentExplicit(),
-                String.join(", ", condition.keywords()),
-                String.join(", ", condition.expandedKeywords()),
+                candidates.retried(),
+                candidates.mysqlFallbackUsed(),
                 fallbackReason,
                 Duration.between(start, Instant.now()).toMillis(),
-                regionPoolCounts.total(),
-                regionPoolCounts.exactSigungu(),
-                regionPoolCounts.parentSido(),
-                regionPoolCounts.nationwide(),
-                regionPoolCounts.multiple(),
-                counters.unknownExcludedCount,
-                counters.wrongRegionExcludedCount,
-                selection.exactSigunguSelectedCount(),
-                selection.parentSidoSelectedCount(),
-                selection.nationwideSelectedCount(),
-                0,
-                plan.normalizedGoal(),
-                plan.desiredDomains().stream().map(Enum::name).sorted().collect(java.util.stream.Collectors.joining(", ")),
-                plan.excludedDomains().stream().map(Enum::name).sorted().collect(java.util.stream.Collectors.joining(", ")),
-                String.join(", ", plan.positiveTerms()),
-                String.join(", ", plan.excludedTerms()),
-                plan.explicitExclusion(),
-                intent.semanticQuery(),
-                vectorCandidatesBySource.containsKey(CandidateSource.VECTOR_ORIGINAL_QUERY),
-                vectorCandidatesBySource.getOrDefault(CandidateSource.VECTOR_NORMALIZED_QUERY, List.of()).size(),
-                counters.excludedDomainFiltered,
-                plan.userEducationStages().stream().map(Enum::name).sorted().collect(java.util.stream.Collectors.joining(", ")),
-                plan.educationStageExplicit(),
-                counters.targetFiltered,
-                counters.targetUnknownCount,
                 userEmploymentStatus.status().name(),
                 userEmploymentStatus.explicit(),
                 String.join(", ", userEmploymentStatus.evidence()),
-                userEmploymentStatus.explicit() ? "RULE_EXPLICIT" : "UNKNOWN",
-                counters.employedMismatchFiltered,
-                counters.unemployedMismatchFiltered,
-                counters.primaryCandidateCount,
-                counters.needsConfirmationCandidateCount,
-                results.stream().anyMatch(item -> RecommendationTier.NEEDS_CONFIRMATION.name().equals(item.recommendationTier())),
-                semanticConflictDetected(parsed),
-                semanticConflictReason(parsed)
-        );
+                userEmploymentStatus.explicit() ? "RULE_EXPLICIT" : "UNKNOWN");
         return new PolicySearchResponse(answer(results, fallbackReason), condition, parsed.parserMode(), parsed.fallback(),
                 condition.searchMode().name(), queryType.name(),
-                vectorCandidatesBySource.values().stream().mapToInt(List::size).sum(), results.size(),
+                candidateMetrics.vectorCandidateCount(), results.size(),
                 totalMatched, page, size, hasNext, results, diagnostics);
     }
 
@@ -499,66 +317,9 @@ public class PolicyRagSearchService {
         return "NOT_IN_TRACE_OR_BELOW_RESULT_LIMIT";
     }
 
-    private List<Document> vectorSearch(VectorStore vectorStore, String query, int topK, boolean applyThreshold) {
-        SearchRequest.Builder builder = SearchRequest.builder()
-                .query(query)
-                .topK(topK);
-        if (applyThreshold) {
-            builder.similarityThreshold(properties.getSearch().getMinimumSimilarity());
-        }
-        return vectorStore.similaritySearch(builder.build());
-    }
-
-    private Map<Integer, Double> semanticScores(Map<CandidateSource, List<Document>> documentsBySource) {
-        Map<Integer, Double> scores = new LinkedHashMap<>();
-        for (var entry : documentsBySource.entrySet()) {
-            double weight = switch (entry.getKey()) {
-                case VECTOR_ORIGINAL_QUERY -> 1.0;
-                case VECTOR_NORMALIZED_QUERY -> 0.95;
-                case VECTOR_INTENT_QUERY -> 0.85;
-                default -> 0.6;
-            };
-            List<Document> documents = entry.getValue();
-            for (int i = 0; i < documents.size(); i++) {
-                Document document = documents.get(i);
-                Integer policyId = policyId(document);
-                if (policyId != null) {
-                    double vector = document.getScore() == null ? 0.0 : document.getScore();
-                    double rrf = weight / (60.0 + i + 1);
-                    scores.merge(policyId, Math.max(vector * 0.35, rrf * 20.0), Math::max);
-                }
-            }
-        }
-        return scores;
-    }
-
-    private Map<Integer, Set<CandidateSource>> candidateSources(Map<CandidateSource, List<Document>> documentsBySource) {
-        Map<Integer, Set<CandidateSource>> sources = new LinkedHashMap<>();
-        for (var entry : documentsBySource.entrySet()) {
-            for (Document document : entry.getValue()) {
-                Integer policyId = policyId(document);
-                if (policyId != null) {
-                    sources.computeIfAbsent(policyId, ignored -> EnumSet.noneOf(CandidateSource.class)).add(entry.getKey());
-                }
-            }
-        }
-        return sources;
-    }
-
-    private Integer policyId(Document document) {
-        Object value = document.getMetadata().get("policyId");
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value instanceof String text && text.matches("\\d+")) {
-            return Integer.parseInt(text);
-        }
-        return null;
-    }
-
     private PolicySearchResultItem score(Policy policy, PolicySearchCondition condition, PolicySearchIntent intent,
                                          ResolvedUserRegion userRegion, double semanticScore, double lexicalScore,
-                                         double titleExactScore, Set<CandidateSource> sources, FilterCounters counters,
+                                         double titleExactScore, Set<CandidateSource> sources, PolicySearchFilterMetrics counters,
                                          SearchQueryType queryType, PolicySearchPlan plan,
                                          PolicyTargetAudienceClassification targetAudience,
                                          PolicyEmploymentAudience employmentAudience,
@@ -649,7 +410,7 @@ public class PolicyRagSearchService {
     }
 
     private boolean pass(PolicySearchResultItem item, PolicySearchCondition condition, PolicySearchPlan plan,
-                         FilterCounters counters) {
+                         PolicySearchFilterMetrics counters) {
         if ("CLOSED".equals(item.applicationStatus())) {
             counters.applicationFiltered++;
             return false;
@@ -820,7 +581,7 @@ public class PolicyRagSearchService {
     }
 
     private void applyCondition(String label, ConditionMatchResult result, boolean explicit,
-                                List<String> matched, List<String> needCheck, FilterCounters counters) {
+                                List<String> matched, List<String> needCheck, PolicySearchFilterMetrics counters) {
         if (!explicit) {
             return;
         }
@@ -840,7 +601,7 @@ public class PolicyRagSearchService {
     }
 
     private void applyTargetStage(TargetStageMatchResult result, List<String> matched,
-                                  List<String> needCheck, FilterCounters counters) {
+                                  List<String> needCheck, PolicySearchFilterMetrics counters) {
         if (result.status() == ConditionMatchStatus.MATCH) {
             matched.add("대상 교육 단계 일치: " + result.reason());
         } else if (result.status() == ConditionMatchStatus.MISMATCH) {
@@ -891,7 +652,7 @@ public class PolicyRagSearchService {
         return new Recommendation(RecommendationTier.PRIMARY, "명시 조건과 충돌하지 않는 기본 추천 후보입니다.");
     }
 
-    private void countRecommendation(RecommendationTier tier, FilterCounters counters) {
+    private void countRecommendation(RecommendationTier tier, PolicySearchFilterMetrics counters) {
         if (tier == RecommendationTier.PRIMARY) {
             counters.primaryCandidateCount++;
         } else if (tier == RecommendationTier.NEEDS_CONFIRMATION) {
@@ -973,13 +734,6 @@ public class PolicyRagSearchService {
         return 0;
     }
 
-    private String categoryQuery(PolicySearchCondition condition, PolicySearchIntent intent) {
-        if (StringUtils.hasText(condition.category())) {
-            return "청년 " + condition.category() + " 지원 정책";
-        }
-        return intent.intentTerms().isEmpty() ? intent.semanticQuery() : String.join(" ", intent.intentTerms()) + " 정책";
-    }
-
     private String answer(List<PolicySearchResultItem> results, String fallbackReason) {
         if (results.isEmpty()) {
             return switch (fallbackReason == null ? "" : fallbackReason) {
@@ -1011,7 +765,7 @@ public class PolicyRagSearchService {
                 .toList();
     }
 
-    private void countRegion(RegionCompatibility compatibility, FilterCounters counters) {
+    private void countRegion(RegionCompatibility compatibility, PolicySearchFilterMetrics counters) {
         switch (compatibility) {
             case EXACT_SIGUNGU -> {
                 counters.exactSigunguMatchedCount++;
@@ -1076,25 +830,11 @@ public class PolicyRagSearchService {
         return false;
     }
 
-    private boolean semanticConflictDetected(PolicySearchConditionParser.ParsedPolicySearchCondition parsed) {
-        return parsed.semantics().explicitExclusion()
-                && parsed.condition() != null
-                && ("일자리".equals(parsed.condition().category()) || parsed.condition().keywords().stream()
-                .anyMatch(keyword -> containsAny(keyword, "취업", "구직", "일자리", "면접")));
-    }
-
-    private String semanticConflictReason(PolicySearchConditionParser.ParsedPolicySearchCondition parsed) {
-        if (!semanticConflictDetected(parsed)) {
-            return null;
-        }
-        return "원문 명시 제외 표현이 구조화 category/keywords의 취업 신호보다 우선 적용됨";
-    }
-
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
     }
 
-    private void countAge(ConditionMatchStatus status, FilterCounters counters) {
+    private void countAge(ConditionMatchStatus status, PolicySearchFilterMetrics counters) {
         switch (status) {
             case MATCH -> counters.ageMatchedCount++;
             case UNKNOWN -> counters.ageUnknownCount++;
@@ -1102,7 +842,7 @@ public class PolicyRagSearchService {
         }
     }
 
-    private void countEmployment(ConditionMatchStatus status, FilterCounters counters) {
+    private void countEmployment(ConditionMatchStatus status, PolicySearchFilterMetrics counters) {
         switch (status) {
             case MATCH -> counters.employmentMatchedCount++;
             case UNKNOWN -> counters.employmentUnknownCount++;
@@ -1110,7 +850,7 @@ public class PolicyRagSearchService {
         }
     }
 
-    private String determineFallbackReason(String current, int vectorCount, int lexicalCount, FilterCounters counters,
+    private String determineFallbackReason(String current, int vectorCount, int lexicalCount, PolicySearchFilterMetrics counters,
                                            PolicySearchCondition condition) {
         if (vectorCount == 0 && lexicalCount == 0) return "NO_CANDIDATES";
         if (lexicalCount == 0 && condition.searchMode() == PolicySearchMode.KEYWORD) return "NO_LEXICAL_MATCH";
@@ -1126,74 +866,10 @@ public class PolicyRagSearchService {
         return current == null ? "INSUFFICIENT_FINAL_RESULTS" : current;
     }
 
-    private static class FilterCounters {
-        int regionFiltered;
-        int unknownExcludedCount;
-        int wrongRegionExcludedCount;
-        int nationwideCandidateCount;
-        int provinceMatchedCount;
-        int cityMatchedCount;
-        int districtMatchedCount;
-        int exactSigunguMatchedCount;
-        int exactSidoMatchedCount;
-        int parentSidoMatchedCount;
-        int nationwideMatchedCount;
-        int multipleRegionMatchedCount;
-        int regionUnknownCount;
-        int regionNotMatchedCount;
-        int regionHardFilteredCount;
-        int topicThresholdPassedCount;
-        int topicThresholdFailedCount;
-        int topicFilteredCount;
-        int regionEligibleCount;
-        int regionIneligibleCount;
-        int ageMatchedCount;
-        int ageUnknownCount;
-        int ageMismatchedCount;
-        int employmentMatchedCount;
-        int employmentUnknownCount;
-        int employmentMismatchedCount;
-        int ageFiltered;
-        int employmentFiltered;
-        int studentFiltered;
-        int targetFiltered;
-        int targetUnknownCount;
-        int employedMismatchFiltered;
-        int unemployedMismatchFiltered;
-        int primaryCandidateCount;
-        int needsConfirmationCandidateCount;
-        int applicationFiltered;
-        int excludedDomainFiltered;
-
-        boolean hasNoTopicRelevantCandidate() {
-            return (topicFilteredCount > 0 || topicThresholdFailedCount > 0)
-                    && topicThresholdPassedCount == 0;
-        }
-    }
-
     private record EmploymentAudienceMatch(ConditionMatchStatus status, String reason) {
     }
 
     private record Recommendation(RecommendationTier tier, String reason) {
     }
 
-    private record RegionPoolCounts(int total, int exactSigungu, int parentSido, int nationwide, int multiple) {
-        static RegionPoolCounts from(List<RegionEligiblePolicyCandidate> candidates) {
-            int exactSigungu = 0;
-            int parentSido = 0;
-            int nationwide = 0;
-            int multiple = 0;
-            for (RegionEligiblePolicyCandidate candidate : candidates) {
-                switch (candidate.compatibility()) {
-                    case EXACT_SIGUNGU -> exactSigungu++;
-                    case PARENT_SIDO, EXACT_SIDO -> parentSido++;
-                    case NATIONWIDE -> nationwide++;
-                    case MULTIPLE_REGION_MATCH -> multiple++;
-                    default -> {
-                    }
-                }
-            }
-            return new RegionPoolCounts(candidates.size(), exactSigungu, parentSido, nationwide, multiple);
-        }
-    }
 }

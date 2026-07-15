@@ -1,92 +1,142 @@
 # CODE REVIEW GUIDE
 
-## 전체 요청 흐름
+## 1. 검색 요청 진입점
 
-사용자 검색 요청은 `/api/policies/search`로 들어오며, 검색 조건 분석, 후보 조회, 자격 필터, 랭킹, 진단 응답 순서로 처리된다. OpenAI 조건 분석은 검색당 최대 한 번만 수행하고, 실패 시 Java rule 기반 분석으로 대체한다.
+- 대표 클래스: `PolicySearchController`, `PolicyRagSearchService`
+- 입력: `/api/policies/search`의 자연어 query, page, size
+- 출력: 기존 `PolicySearchResponse` JSON 구조
+- DB 사용: 정책 후보 로딩 시 `PolicyRepository`
+- 외부 API 사용: 검색 시점에는 OpenAI 조건 분석과 Qdrant만 사용하며 온통청년 API는 호출하지 않는다.
+- 주의사항: 컨트롤러나 Orchestrator에 문자열 contains 규칙을 추가하지 않는다. 검색 규칙은 Plan, Candidate, Evaluator, Ranking 전용 컴포넌트에서 수정한다.
 
-## 정책 수집 흐름
+## 2. SearchPlan 생성
 
-온통청년 API 원문은 `PolicyPersistenceService`에서 `Policy`와 `PolicyCondition`으로 저장된다. 저장 후 `PolicySourceSnapshotService`가 원문 Snapshot을 보존하고, `PolicyApplicabilityClassificationService`가 같은 원문 필드로 신청 가능 지역을 판정한다. 수집 과정에서 `policy_region`을 직접 병합하지 않는다.
+- 대표 클래스: `PolicySearchPlanService`
+- 입력: 사용자 원문 query, resultSize
+- 출력: `PolicySearchPlan`, parser mode, fallback 정보
+- DB 사용: 없음
+- 외부 API 사용: `CompositePolicySearchConditionParser`를 통해 OpenAI를 최대 한 번 사용할 수 있다.
+- 확인 값: `normalizedGoal`, `desiredDomains`, `excludedDomains`, `desiredSupportIntents`, `excludedSupportIntents`, `condition`
+- 주의사항: 사용자 취업 상태와 취업 정책 선호를 합치지 않는다. 교육 단계도 Boolean `studentStatus`만으로 단정하지 않는다.
 
-## 지역 분류 흐름
+## 3. Candidate 수집
 
-`StrictPolicyRegionMentionExtractor`는 지역 표현을 찾을 때 역할을 함께 부여한다.
+- 대표 클래스: `PolicySearchCandidateRetriever`
+- 입력: `PolicySearchPlan`, `PolicySearchIntent`, 사용자 지역, page/size
+- 출력: `PolicyCandidateCollection`, `CandidateEvidence`, `CandidateCollectionMetrics`
+- DB 사용: `PolicyRepository`, `RegionEligiblePolicyCandidateService`
+- 외부 API 사용: Qdrant `VectorStore`
+- 실패 시 확인 값: vector 후보 수, lexical 후보 수, region pool 수, fallbackReason
+- 주의사항: 명시적 제외가 있는 query는 원문 vector를 강하게 사용하지 않는다. 후보 source rank와 score는 최종 rank와 다르므로 `CandidateSourceEvidence`에 별도로 보존한다.
 
-- `RESIDENCE_ELIGIBILITY`, `SERVICE_ELIGIBILITY`: `policy_region` 저장 가능
-- `WORKPLACE_LOCATION`, `ACTIVITY_LOCATION`, `INSTITUTION_LOCATION`, `REFERENCE_ONLY`, `UNKNOWN`: Evidence에만 저장
+## 4. Eligibility 평가
 
-`PolicyGeographyClassifier`는 Snapshot 원문에서 신청 자격 지역, 전국 표현, 기관 근거를 종합한다. `zipCd`는 아직 공식 검증된 신청 지역 매핑이 아니므로 Evidence에만 남기고 `policy_region` 생성 근거로 쓰지 않는다.
+- 대표 클래스: 현재 `PolicyRagSearchService` 내부 score/pass, `PolicyTargetEligibilityFilter`, `PolicyEmploymentAudienceClassifier`
+- 입력: 정책, 검색 조건, 대상 분류 결과
+- 출력: match/unknown/mismatch reason과 hard filter 여부
+- DB 사용: 정책 relation 로딩 결과 사용
+- 외부 API 사용: 없음
+- 확인 값: regionCompatibility, ageMatchStatus, employmentMatchStatus, targetStageMatchStatus
+- 주의사항: 지역, 나이, 명시 취업 상태, 교육 단계 불일치는 감점이 아니라 hard filter다. `UNKNOWN`은 데이터 부족이므로 명확한 불일치가 아니면 제거하지 않는다.
 
-## Search Projection 흐름
+## 5. Domain/SupportIntent 필터
 
-`PolicySearchProjectionService`는 정책명, 키워드, 카테고리, 설명, 지원 내용, 대상, 자격, 기관 텍스트를 검색용 projection으로 만든다. BM25 lexical index는 이 projection을 메모리에 올려 필드별 가중치를 적용한다.
+- 대표 클래스: `PolicyDomainClassifier`, `SearchDomainIntentPolicy`
+- 입력: 정책 category/title/support/target/qualification/projection 텍스트, `PolicySearchPlan`
+- 출력: primary domain, secondary domains, support intents, excludedDomainPassed
+- DB 사용: projection 또는 로딩된 정책 텍스트
+- 외부 API 사용: 없음
+- 확인 값: `primaryDomain`, `secondaryDomains`, `supportIntents`, `excludedDomainFiltered`
+- 주의사항: excluded domain은 primary만 보지 않는다. `EMPLOYMENT_SUPPORT`가 붙은 취업 목적 교육 정책은 primary가 EDUCATION이어도 취업 제외 검색에서 제거된다.
 
-## Embedding 흐름
+## 6. Ranking
 
-정책 원문이나 분류 결과가 바뀌어 검색 문서가 달라질 수 있는 경우에만 `PolicyEmbeddingSync`를 `PENDING`으로 전환한다. 전체 Qdrant collection 삭제나 무조건 전체 재임베딩은 금지한다.
+- 대표 클래스: 현재 `PolicyRagSearchService` 내부 ranking 메서드
+- 입력: semanticScore, lexicalScore, titleExactScore, topic relevance, recommendation tier
+- 출력: finalScore와 정렬된 결과
+- DB 사용: 없음
+- 외부 API 사용: 없음
+- 확인 값: title source, topicScore, finalScore, recommendationTier
+- 주의사항: `POLICY_NAME` 검색은 제목 정확도를 먼저 본다. broad/eligibility 검색은 `PRIMARY`를 `NEEDS_CONFIRMATION`보다 앞에 둔다.
 
-## 자연어 검색 흐름
+## 7. Result 조립
 
-`PolicySearchPlanService`가 검색당 한 번만 `PolicySearchPlan`을 만든다. 이 계획에는 원문, 정규화된 긍정 목적, 원하는 domain/support intent, 제외 domain/support intent, 구조화 조건, 분석 모드가 들어 있다. 이후 Vector query, BM25 query, 자격 필터, 선호 필터, ranking, diagnostics는 원문을 다시 해석하지 않고 이 계획만 참조한다.
+- 대표 클래스: 현재 `PolicyRagSearchService` 내부 result item 조립
+- 입력: Policy, domain classification, condition match, recommendation
+- 출력: 기존 `PolicySearchResultItem` JSON 필드
+- DB 사용: 없음
+- 외부 API 사용: 없음
+- 주의사항: API 필드명은 프론트와 연결되어 있으므로 변경하지 않는다. 긴 record 생성자는 단계적으로 assembler로 분리해야 한다.
 
-## 후보 수집
+## 8. Diagnostics
 
-명시 지역이 있으면 `RegionEligiblePolicyCandidateService`가 정확 시군, 상위 시도, 전국, 허용 복수 지역 후보 pool을 만든다. BM25 후보는 `PolicyLexicalIndex`가 projection 기반 필드 가중치와 한국어 n-gram으로 반환한다. Qdrant 후보는 명시적 제외가 없는 경우 원문과 intent query를 사용하고, 제외가 있으면 원문 vector를 쓰지 않고 normalized goal과 긍정 intent query만 사용한다.
+- 대표 클래스: `PolicySearchDiagnosticsFactory`
+- 입력: plan, intent, candidate metrics, filter metrics, selection metrics, elapsed time
+- 출력: 기존 `PolicySearchDiagnostics`
+- DB 사용: 없음
+- 외부 API 사용: 없음
+- 확인 값: vector/mysql 후보 수, hard filter count, excludedDomainFiltered, userEmploymentStatus, educationStage
+- 주의사항: Diagnostics는 검색 후 재추론하지 않고 실행 중 실제로 쓴 metrics만 조립한다.
 
-## Eligibility Filter
+## 9. Explain
 
-지역, 나이, 학생 여부, 명시 취업 상태, 신청 마감은 hard filter다. 무직 같은 사용자 상태는 취업 정책 선호가 아니므로 desired/excluded domain에 자동 반영하지 않는다.
+- 대표 클래스: `PolicyRagSearchService.explain`
+- 입력: query, policyId 또는 sourcePolicyId
+- 출력: 후보 source, 조건 판정, topic/final score, disposition
+- DB 사용: `PolicyRepository`
+- 외부 API 사용: 내부적으로 동일 검색을 수행하므로 검색과 같은 외부 의존성을 가진다.
+- 주의사항: 최종 rank를 source rank처럼 표시하면 안 된다. 후보 수집 단계의 `CandidateSourceEvidence`를 Explain에 계속 연결해야 한다.
 
-## Preference Filter
+## 10. 관리자 Job
 
-`SearchDomainIntentPolicy`가 `PolicyDomainClassification`의 primary domain, secondary domain, support intents를 함께 검사한다. EMPLOYMENT 제외 검색에서는 primary가 EDUCATION이라도 `EMPLOYMENT_SUPPORT`가 붙은 취업 목적 교육 정책을 제거한다. 현금성 지원은 여러 분야에 걸치므로 FINANCE 제외만으로 자동 제거하지 않는다.
+- 대표 클래스: `AdminController`, `AdminJobService`
+- 입력: `/api/admin/jobs/**`
+- 출력: jobId, 진행률, 최근 작업 상태
+- DB 사용: 작업 종류에 따라 정책, embedding, region 테이블 사용
+- 외부 API 사용: 수집 job은 온통청년 API, embedding job은 Qdrant/OpenAI embedding 사용 가능
+- 주의사항: URL은 유지해야 한다. 컨트롤러는 아직 분리 대상이며 비즈니스 로직은 service로 이동해야 한다.
 
-## Hybrid Ranking
+## 11. 정책 수집
 
-제외와 자격 불일치는 감점하지 않고 filter에서 제거한다. 남은 후보만 제목 정확도, BM25 순위/점수, Vector 점수, 원하는 domain/support intent 일치, 지역 적합성으로 정렬한다. 첫 페이지 지역 보정이 적용되면 그 순서를 전체 결과 순서로 확정한 뒤 pagination해 같은 policyId가 다음 페이지에 중복되지 않게 한다.
+- 대표 클래스: `YouthCenterPolicyCollectionService`, `YouthCenterApiClient`, `YouthCenterResponseParser`
+- 입력: 온통청년 목록/상세 API 응답
+- 출력: `Policy`, `PolicyCondition`, `PolicySourceSnapshot`
+- DB 사용: 정책 원본과 snapshot 저장
+- 외부 API 사용: 온통청년 API
+- 주의사항: API URL, 파라미터, 페이지네이션 규칙을 검색 리팩터링 중 변경하지 않는다.
 
-## 실제 Trace
+## 12. Projection
 
-검색 응답과 Explain은 후보 출처, Vector/BM25 점수, domain/support intent, hard filter 통과 여부, 최종 순위를 확인할 수 있어야 한다. 검색 종료 뒤 별도 contains 점수를 재추정하지 않는다.
+- 대표 클래스: `PolicySearchProjectionService`
+- 입력: 정책 및 snapshot 원문 필드
+- 출력: `policy_search_projection`
+- DB 사용: projection upsert
+- 외부 API 사용: 없음
+- 주의사항: projection format 변경은 BM25와 embedding 입력에 영향을 줄 수 있으므로 별도 마이그레이션/재색인 계획 없이 바꾸지 않는다.
 
-## 주요 클래스별 리뷰 포인트
+## 13. Embedding
 
-- `PolicyApplicabilityClassificationService`: 지역 분류 단일 진입점이다. 수집과 재분류가 이 서비스를 우회하면 안 된다.
-- `PolicyGeographyClassifier`: 신청 지역과 단순 위치 언급을 분리한다. 실제 정책명 예외를 넣지 않는다.
-- `StrictPolicyRegionMentionExtractor`: 지역명 주변 문맥으로 role을 판정한다. 실제 지역명 하드코딩 대신 행정구역 catalog를 사용한다.
-- `PolicySearchPlanService`: 검색 계획 단일 진입점이다. parser, rule, classifier 결과를 중복 저장하지 않는다.
-- `SearchDomainIntentPolicy`: 제외 분야와 support intent hard filter의 기준이다. primaryDomain만 확인하는 코드를 다시 만들지 않는다.
-- `PolicyLexicalIndex`: contains 합산이 아니라 projection 기반 BM25를 사용한다. 일반어는 DF가 커져 IDF가 낮아지고, 한국어 복합어는 2~4글자 n-gram과 개념어로 보완한다.
-- `PolicyDomainClassifier`: domain과 support intent를 함께 판정한다. 지원금/수당 단어만으로 금융으로 단정하지 않고, 취업 목적 교육은 `EMPLOYMENT_SUPPORT`를 부여한다.
-- `PolicyRagSearchService`: SearchPlan 생성, 후보 병합, filter, ranking, diagnostics를 조율한다. 새 기능 추가 시 원문 contains 조건을 늘리지 말고 계획/분류/필터 모듈을 수정한다.
+- 대표 클래스: `PolicyEmbeddingService`
+- 입력: `PENDING` 상태 embedding sync rows
+- 출력: Qdrant point와 `policy_embedding_sync` 상태
+- DB 사용: embedding sync 상태 전환
+- 외부 API 사용: embedding model, Qdrant
+- 주의사항: 검색 코드 검증을 이유로 전체 재임베딩이나 Qdrant collection 삭제를 하지 않는다.
 
-## DB 테이블 관계
+## 14. 지역 동기화
 
-- `policy`: 정책 기본 정보
-- `policy_condition`: 나이, 취업 상태, 학생 상태 등 구조화 조건
-- `policy_source_snapshot`: 온통청년 원문 보존
-- `policy_region`: 신청 가능 지역만 저장
-- `policy_region_classification`: 지역 판정 scope, confidence, evidence JSON, classifier version
-- `policy_search_projection`: BM25와 검색 텍스트 projection
-- `policy_embedding_sync`: Qdrant embedding 동기화 상태
-
-## 디버깅 시 확인 순서
-
-1. `policy_source_snapshot`에 원문 필드가 있는지 확인한다.
-2. `policy_region_classification.evidence_json`에서 지역 role과 confidence를 확인한다.
-3. `policy_region`이 신청 가능 지역만 갖는지 확인한다.
-4. `/api/admin/search-index/status`로 BM25 index 문서 수를 확인한다.
-5. `/api/policies/search` diagnostics에서 normalized goal, desired/excluded domain, support intent, vector source, excludedDomainFilteredCount를 확인한다.
-6. 결과 카드의 primary domain, secondary domain, support intents, domain evidence를 확인한다.
-7. `/api/admin/search/explain`으로 특정 정책의 후보 포함/제외 단계를 확인한다.
+- 대표 클래스: `RegionCatalog`, `RegionSynchronizationService`, `PolicyApplicabilityClassificationService`
+- 입력: SGIS 행정구역, snapshot 원문
+- 출력: `region_code`, `policy_region`, `policy_region_classification`
+- DB 사용: 지역 카탈로그와 정책 지역 저장
+- 외부 API 사용: SGIS 동기화 실행 시에만 사용
+- 주의사항: 기업 소재지, 면접 장소, 기관 소재지를 신청자 거주 지역으로 저장하지 않는다. `zipCd`는 검증 전까지 신청 지역 근거로 쓰지 않는다.
 
 ## 수정하면 안 되는 핵심 불변 조건
 
-- Snapshot 원문 없이 기존 `policy_region`만 보고 재분류하지 않는다.
-- `zipCd`를 SGIS 코드와 숫자가 같다는 이유로 신청 지역에 연결하지 않는다.
-- 기업 소재지, 면접 장소, 교육 장소, 기관 소재지를 신청자 거주 지역으로 저장하지 않는다.
-- 실제 정책명 예외를 production ranking이나 지역 판정에 넣지 않는다.
+- 실제 정책명 예외를 production 검색/지역 판정에 넣지 않는다.
 - 취업 상태와 취업 정책 선호를 같은 값으로 합치지 않는다.
-- excluded domain은 primary domain만이 아니라 secondary domain과 support intent까지 검사한다.
-- 구형 title/summary contains 점수와 BM25 점수를 혼용하지 않는다.
-- 전체 정책 재수집, Qdrant collection 삭제, Docker volume 삭제를 검색 코드 검증 수단으로 사용하지 않는다.
+- excluded domain은 primary, secondary, support intent를 함께 검사한다.
+- 지역/나이 같은 명확한 자격 불일치는 감점하지 않고 제거한다.
+- 기존 REST API 경로와 JSON 필드명은 유지한다.
+- 전체 정책 재수집, projection 전체 재생성, Qdrant 전체 재임베딩, Docker volume 삭제는 리팩터링 검증 수단이 아니다.

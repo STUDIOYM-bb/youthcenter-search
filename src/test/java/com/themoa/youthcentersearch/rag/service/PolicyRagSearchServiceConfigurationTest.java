@@ -19,23 +19,24 @@ class PolicyRagSearchServiceConfigurationTest {
         ObjectProvider<VectorStore> vectorStoreProvider = mock(ObjectProvider.class);
         SearchDomainIntentPolicy domainIntentPolicy = new SearchDomainIntentPolicy();
         UserEducationStageDetector educationStageDetector = new UserEducationStageDetector();
+        RagProperties properties = new RagProperties();
         PolicyRagSearchService service = new PolicyRagSearchService(
                 mock(PolicyRepository.class),
-                vectorStoreProvider,
-                new RagProperties(),
+                properties,
                 mock(RegionMatchEvaluator.class),
-                mock(PolicyLexicalSearchService.class),
                 mock(PolicySearchIntentBuilder.class),
                 new PolicyDomainClassifier(),
                 new PolicySearchPlanService(mock(CompositePolicySearchConditionParser.class),
                         new PolicyQueryClassifier(new PolicyKeywordNormalizer()), domainIntentPolicy, educationStageDetector),
+                new PolicySearchCandidateRetriever(mock(PolicyRepository.class), vectorStoreProvider, properties,
+                        mock(PolicyLexicalSearchService.class), null),
+                new PolicySearchDiagnosticsFactory(),
                 domainIntentPolicy,
                 mock(PolicyTargetAudienceClassifier.class),
                 new PolicyTargetEligibilityFilter(),
                 mock(PolicyEmploymentAudienceClassifier.class),
                 new UserEmploymentStatusDetector(),
                 educationStageDetector,
-                null,
                 new RegionCoverageResultSelector());
 
         assertThatThrownBy(() -> service.search(new PolicySearchRequest("청년 지원금", null)))

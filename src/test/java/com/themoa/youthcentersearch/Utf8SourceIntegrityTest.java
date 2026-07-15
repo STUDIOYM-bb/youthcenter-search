@@ -19,7 +19,8 @@ class Utf8SourceIntegrityTest {
     private static final List<String> BROKEN_FRAGMENTS = List.of(
             "\uFFFD",
             "\u00EC\u201E", "\u00EC\u009D", "\u00ED\u2022",
-            "\u00EA\u00B0", "\u00EB\u008F", "\u00EC\u00A7"
+            "\u00EA\u00B0", "\u00EB\u008F", "\u00EC\u00A7",
+            "\u9858", "\uF9E3?", "?\u2466", "\u7531\u044A", "\u5A9B\u0080"
     );
 
     @Test

@@ -1,118 +1,104 @@
 # RAG Search Flow
 
-## Query semantics and exclusions
+## 실행 순서
 
-Natural language search now separates two concepts that must not be merged:
+1. `/api/policies/search` 요청이 `PolicyRagSearchService`로 들어온다.
+2. `PolicySearchPlanService`가 OpenAI/Rule 결과를 합쳐 `PolicySearchPlan`을 만든다.
+3. `PolicySearchIntentBuilder`가 vector/lexical 질의에 사용할 긍정 의도 문장을 만든다.
+4. `PolicySearchCandidateRetriever`가 Qdrant, BM25 lexical, 지역 적격 pool 후보를 수집하고 policyId 기준으로 병합한다.
+5. 정책 relation을 로딩한 뒤 지역, 나이, 취업 상태, 학생 Boolean, 교육 단계, 신청 상태를 hard filter로 평가한다.
+6. `PolicyDomainClassifier`와 `SearchDomainIntentPolicy`가 제외 domain/support intent를 적용한다.
+7. 제목 정확도, semantic score, lexical score, topic relevance, recommendation tier로 정렬한다.
+8. `RegionCoverageResultSelector`가 첫 페이지 지역 보장을 적용하고, 그 순서를 전체 결과 순서로 확정한 뒤 pagination한다.
+9. `PolicySearchDiagnosticsFactory`가 실행 중 수집된 metrics를 기존 Diagnostics JSON으로 조립한다.
 
-- user state, such as `EMPLOYED`, `UNEMPLOYED`, or unknown
-- policy domains the user wants or explicitly excludes
+## SearchPlan
 
-`PolicyQuerySemantics` carries the positive-only goal, desired domains, excluded
-domains, positive keywords, excluded keywords, and whether the query contains an
-explicit exclusion. The OpenAI parser may return these fields, but Java rule
-validation always re-checks explicit exclusions through
-`PolicyIntentPolarityDetector`.
+`PolicySearchPlan`은 검색 요청당 한 번만 생성된다.
 
-When an explicit exclusion is present, the search pipeline avoids using the raw
-query as the strong vector query because negated words such as `취업 생각은 없어`
-can still be close to employment policies in embedding space. The pipeline uses
-`VECTOR_NORMALIZED_QUERY` from `normalizedGoal` and builds
-`VECTOR_INTENT_QUERY` only from desired domains and positive keywords.
+- `originalQuery`: 사용자 원문
+- `normalizedGoal`: 부정 표현을 제거한 긍정 목적
+- `desiredDomains`, `excludedDomains`
+- `desiredSupportIntents`, `excludedSupportIntents`
+- `positiveTerms`, `excludedTerms`
+- `condition`: 지역, 나이, 취업 상태, 학생 여부 등 구조화 조건
+- `userEducationStages`, `educationStageExplicit`
 
-Lexical search receives polarity-filtered intent terms. Excluded keywords and
-synonyms of excluded domains are not used for lexical candidate boosts.
+취업 상태(`EMPLOYED`, `UNEMPLOYED`)와 취업 정책 선호(`EMPLOYMENT_SUPPORT` 원함/제외)는 서로 다른 값이다.
 
-After vector, lexical, and region-eligible candidates are merged and condition
-filters are applied, `PolicyDomainClassifier` classifies each policy's primary
-domain from the policy category plus policy title/support/summary purpose.
-Policies whose primary domain is explicitly excluded are removed before final
-ranking. Secondary mentions, such as employment wording only in eligibility
-conditions, do not make a non-employment policy an employment-primary policy.
+## Candidate 수집
 
-This change only modifies query analysis, ranking, and filtering. Existing
-policy rows, search projections, embedding documents, Qdrant metadata, and
-Qdrant collections do not need to be rebuilt.
+후보 수집은 `PolicySearchCandidateRetriever`가 담당한다.
 
-사용자 검색은 저장된 정책 데이터만 사용한다.
+- Qdrant 원문/정규화/의도 query 후보
+- `PolicyLexicalIndex` 기반 BM25 후보
+- 지역이 명시된 경우 정확 시군, 상위 시도, 전국, 허용 복수 지역 후보 pool
+- Broad/Eligibility 검색에서 지역 pool 또는 active policy fallback 후보
 
-1. 사용자가 자연어 질의 입력
-2. OpenAI ChatModel로 조건 추출
-3. Java 원문 검증으로 명시 조건만 유지
-4. `KEYWORD`, `CONDITION`, `HYBRID` 검색 모드 판정
-5. 정책 키워드와 동의어 추출
-6. 조건어와 정책 의도를 분리한 `PolicySearchIntent` 생성
-7. 원문, 정책 의도, 확장 의도, 카테고리 Query로 Qdrant 후보 검색
-8. MySQL 제목/키워드/요약/분야 후보 검색
-9. `policyId` 기준 후보 병합 및 중복 제거
-10. 사용자가 명시한 조건만 Hard Filter 적용
-11. Topic Relevance Threshold 적용
-12. 검색 모드별 Dynamic Ranking
-13. 검색된 정책만 근거로 답변 생성
+명시적 제외가 있으면 원문 vector query를 강하게 쓰지 않는다. 예를 들어 `취업 생각은 없어`의 원문 embedding은 취업 정책과 가까울 수 있으므로 `normalizedGoal`과 긍정 intent query를 사용한다.
 
-## Query Rewrite
-
-사용자 문장 안의 지역, 나이, 거주 표현은 구조화 조건으로 사용하고 semantic query의 중심에서 제외한다. 예를 들어 `수원 사는 27살 취준생 정책`은 다음처럼 나뉜다.
-
-- 조건어: `수원`, `27살`, `취준생`
-- 정책 의도: `청년`, `취업 지원`, `구직 지원`, `취업 준비`
-- Semantic Query: `청년 취업 준비 및 구직 활동을 지원하는 정책`
-- Lexical Query: `청년 취업 구직 면접 면접수당 구직활동 취업역량 ...`
-
-원문 Query도 후보 검색 경로로 유지한다.
+각 후보는 `CandidateEvidence`와 `CandidateSourceEvidence`를 가진다. 최종 순위와 source별 rank는 다르므로 별도로 보존한다.
 
 ## Hard Filter
 
-- `active=false` 제외
-- 사용자가 지역을 명시한 경우에만 명확한 지역 불일치 제외
-- 사용자가 나이를 명시한 경우에만 명확한 나이 불일치 제외
-- 사용자가 취업/학생 상태를 명시한 경우에만 명확한 취업/학생 상태 불일치 제외
-- 신청 마감 정책 제외
+명확한 자격 불일치는 감점하지 않고 제거한다.
 
-조건 판정은 `MATCH`, `UNKNOWN`, `MISMATCH` 세 단계다. 정책 데이터가 비어 있어 `UNKNOWN`인 경우에는 후보를 제거하지 않고 확인 필요로 표시한다. 명확하게 반대 조건인 `MISMATCH`만 제거한다.
+- 지역 불일치
+- 나이 불일치
+- 명시 취업 상태 불일치
+- 정책 취업 대상 불일치
+- 학생 Boolean 불일치
+- 교육 단계 전용 정책 불일치
+- 신청 마감
 
-지역은 점수만 낮추지 않고 Hard Filter로 제거한다. 하위 시·군·자치구를 입력한 사용자는 해당 시·군·자치구 정책, 상위 시·도 전체 정책, 전국 정책, 복수 지역 중 사용자 지역 또는 상위 시·도를 포함한 정책만 통과한다. 같은 시·도의 형제 시·군·자치구 전용 정책과 다른 시·도 정책은 제거된다.
+정책 정보가 부족한 `UNKNOWN`은 기본적으로 제거하지 않는다. 데이터 부족 정책을 모두 제거하면 실제 신청 가능한 정책까지 누락될 수 있기 때문이다.
 
-시·도 전체를 입력한 경우에는 해당 시·도 전체 정책, 전국 정책, 복수 지역 중 해당 시·도 전체를 포함한 정책만 통과한다. 사용자가 하위 시·군·자치구를 말하지 않았으므로 해당 시·도 산하 특정 시·군·자치구 전용 정책은 자동 포함하지 않는다.
+## Preference Filter
 
-`전국`을 명시한 검색은 지역 미입력 검색과 다르다. 전국 명시 검색은 명시적 전국 정책만 통과하고, 지역 미입력 검색은 지역 Hard Filter를 적용하지 않는다.
+사용자가 제외한 domain/support intent는 `SearchDomainIntentPolicy`가 검사한다.
 
-지역을 입력하지 않은 키워드 검색에서는 지역 Hard Filter를 적용하지 않는다. `청년 면접 수당`은 서울, 경기, 부산, 서산 등 모든 지역 후보를 키워드와 의미 관련도로 비교한다.
+EMPLOYMENT 제외 검색에서는 다음 정책을 제거한다.
 
-## Hybrid Ranking
+- primaryDomain = EMPLOYMENT
+- secondaryDomains contains EMPLOYMENT
+- supportIntents contains EMPLOYMENT_SUPPORT
 
-최종 점수는 의미 유사도만 사용하지 않는다.
+단순 자격 문구에 “취업 시 지원 종료”가 있다는 이유만으로 취업 정책으로 분류하지 않는다.
 
-- 의미 유사도
-- 지역 적합도
-- 나이 적합도
-- 취업/학생 조건
-- 지원 형태
-- 제목/키워드 일치
-- 신청 상태
+## Ranking
 
-점수는 검색 관련도이며 신청 가능성을 확정하지 않는다.
+정렬은 기존 점수 공식을 유지한다.
 
-`KEYWORD` 모드는 lexical/title 점수를 높이고 지역 점수를 사용하지 않는다. `HYBRID` 모드는 semantic, lexical, title, region, 조건 점수를 함께 사용한다. 입력되지 않은 조건의 가중치는 제외하고 남은 가중치로 정규화한다.
+- `POLICY_NAME`: Exact title 우선
+- `BROAD_DISCOVERY`, `ELIGIBILITY_SEARCH`: `PRIMARY` tier 우선, 이후 기존 finalScore
+- 같은 tier 내부에서는 finalScore, 지역 동률 보정, policyId 순서를 사용한다.
 
-지역 점수는 행정구역 거리 점수가 아니라 신청 지역 자격 충족 여부다. 정확한 시·군·자치구, 상위 시·도 전체, 전국, 복수 지역 일치 정책은 모두 지역 점수 100을 받는다. 호환되는 정책끼리의 최종 순서는 의미 유사도, 키워드, 제목 정확도, 나이·취업·학생·지원 형태, 신청 상태 점수로 결정한다.
+지원 형태 가중치는 실제 support 점수 없이 분모에만 들어가면 점수를 낮출 수 있으므로 현재 공식에서는 사용하지 않는다.
 
-## Topic Relevance
+## Diagnostics
 
-지역 자격을 만족해도 정책 주제가 검색 의도와 무관하면 최종 결과에서 제외할 수 있다. `RAG_MINIMUM_TOPIC_RELEVANCE` 기본값은 `0.25`이며, 제목 정확 일치, 강한 lexical 일치, 높은 semantic 일치, category 일치 중 하나가 충분하면 통과한다.
+`PolicySearchDiagnosticsFactory`는 다음 값을 재계산하지 않고 실행 중 수집된 metrics에서 조립한다.
 
-이 변경은 검색 Query와 Ranking 로직만 바꾸므로 Embedding Document와 Qdrant Point ID를 변경하지 않는다. 기존 임베딩을 전체 재생성할 필요는 없다.
+- vector/mysql 후보 수
+- 중복 후보 수
+- 지역 pool 수
+- hard filter count
+- excluded domain count
+- 사용자 취업 상태와 evidence
+- 사용자 교육 단계
+- recommendation tier count
+- semantic conflict 여부
 
-## Explain API
+기존 JSON 필드명은 프론트와 호환을 위해 유지한다.
 
-관리자 API `POST /api/admin/search/explain`은 특정 정책이 검색 결과에 포함되지 않은 이유를 반환한다.
+## Explain
 
-요청 예:
+Explain은 현재 검색을 동일하게 실행한 뒤 특정 정책이 결과에 포함됐는지 확인한다.
 
-```json
-{
-  "query": "수원 사는 27살 취준생 정책",
-  "policyId": 123
-}
-```
+- 포함된 경우 결과 item의 실제 score와 condition match를 반환한다.
+- 제외된 경우 지역/나이/취업/학생/교육 단계 기준으로 disposition을 계산한다.
+- 후보 source별 rank/score는 `CandidateSourceEvidence`를 계속 연결해야 하며, 최종 rank를 vector rank처럼 표시하면 안 된다.
 
-응답에는 후보 검색 경로, 지역/나이/취업/학생 판정, Topic 점수, 최종 포함 여부가 포함된다.
+## 재색인·재임베딩
+
+이 흐름은 query 분석, 후보 수집, hard filter, ranking만 다룬다. 정책 원문, projection format, embedding document, Qdrant point id를 바꾸지 않는 한 전체 재수집이나 전체 재임베딩은 필요하지 않다.

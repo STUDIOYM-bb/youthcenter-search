@@ -69,9 +69,9 @@ public class YouthCenterResponseParser {
         return switch (type) {
             case JSON -> parseJsonDetail(response);
             case XML -> parseXmlDetail(response);
-            case HTML -> throw responseException("?뺤콉 JSON/XML ???HTML ?묐떟??諛쏆븯?듬땲?? ?몄쬆?? URL, Redirect ?먮뒗 ?쒕퉬???곹깭瑜??뺤씤?섏꽭??",
+            case HTML -> throw responseException("정책 JSON/XML 대신 HTML 응답을 받았습니다. 인증, URL, Redirect 또는 서비스 상태를 확인하세요.",
                     response, type, null, null);
-            default -> throw responseException("?곸꽭 ?묐떟 ?뺤떇???뺤씤?????놁뒿?덈떎.", response, type, null, null);
+            default -> throw responseException("상세 응답 형식을 확인할 수 없습니다.", response, type, null, null);
         };
     }
 
@@ -80,7 +80,7 @@ public class YouthCenterResponseParser {
         SchemaAnalysis analysis = schemaAnalyzer.analyzeJson(root);
         ApiError error = jsonError(root);
         if (error.isError()) {
-            throw responseException("?⑦넻泥?뀈 API ?ㅻ쪟 ?묐떟?낅땲?? " + error.message(), response,
+            throw responseException("온통청년 API 오류 응답입니다. " + error.message(), response,
                     ResponseType.JSON, error.code(), error.message());
         }
         JsonNode array = currentPolicyList(root);
@@ -120,7 +120,7 @@ public class YouthCenterResponseParser {
         SchemaAnalysis analysis = schemaAnalyzer.analyzeJson(root);
         ApiError error = jsonError(root);
         if (error.isError()) {
-            throw responseException("?⑦넻泥?뀈 API ?ㅻ쪟 ?묐떟?낅땲?? " + error.message(), response,
+            throw responseException("온통청년 API 오류 응답입니다. " + error.message(), response,
                     ResponseType.JSON, error.code(), error.message());
         }
         DetailNode detail;
@@ -130,7 +130,7 @@ public class YouthCenterResponseParser {
             throw responseException(ex.getMessage(), response, ResponseType.JSON, null, null);
         }
         if (detail.node() == null) {
-            throw responseException("?곸꽭 ?묐떟?먯꽌 $.result.youthPolicyList[0] ?뺤콉 ?곗씠?곕? 李얠? 紐삵뻽?듬땲??",
+            throw responseException("상세 응답에서 $.result.youthPolicyList[0] 정책 데이터를 찾지 못했습니다.",
                     response, ResponseType.JSON, null, null);
         }
         return new ParsedPolicyDetail(mapper.fromJson(detail.node()), analysis, false, null, null, detail.warnings());
@@ -141,7 +141,7 @@ public class YouthCenterResponseParser {
         SchemaAnalysis analysis = schemaAnalyzer.analyzeXml(document);
         ApiError error = xmlError(document);
         if (error.isError()) {
-            throw responseException("?⑦넻泥?뀈 API ?ㅻ쪟 ?묐떟?낅땲?? " + error.message(), response,
+            throw responseException("온통청년 API 오류 응답입니다. " + error.message(), response,
                     ResponseType.XML, error.code(), error.message());
         }
         Element repeated = bestRepeatedElement(document);
@@ -164,7 +164,7 @@ public class YouthCenterResponseParser {
         SchemaAnalysis analysis = schemaAnalyzer.analyzeXml(document);
         ApiError error = xmlError(document);
         if (error.isError()) {
-            throw responseException("?⑦넻泥?뀈 API ?ㅻ쪟 ?묐떟?낅땲?? " + error.message(), response,
+            throw responseException("온통청년 API 오류 응답입니다. " + error.message(), response,
                     ResponseType.XML, error.code(), error.message());
         }
         Element repeated = bestRepeatedElement(document);
@@ -182,10 +182,10 @@ public class YouthCenterResponseParser {
         JsonNode list = root.path("result").path("youthPolicyList");
         if (list.isArray()) {
             if (list.isEmpty()) {
-                throw new IllegalStateException("?곸꽭 ?묐떟??$.result.youthPolicyList媛 鍮?諛곗뿴?낅땲??");
+                throw new IllegalStateException("상세 응답의 $.result.youthPolicyList가 빈 배열입니다.");
             }
             if (list.size() > 1) {
-                warnings.add("?곸꽭 ?묐떟???뺤콉???щ윭 嫄??ы븿?섏뼱 泥?踰덉㎏ ?뺤콉???ъ슜?덉뒿?덈떎.");
+                warnings.add("상세 응답에 정책이 여러 건 포함되어 첫 번째 정책을 사용했습니다.");
             }
             if (list.get(0).isObject()) {
                 return new DetailNode(list.get(0), warnings);
@@ -197,12 +197,12 @@ public class YouthCenterResponseParser {
         }
         JsonNode dataDetail = root.path("data").path("detail");
         if (dataDetail.isObject()) {
-            warnings.add("援ъ“ fallback?쇰줈 $.data.detail???ъ슜?덉뒿?덈떎.");
+            warnings.add("구조 fallback으로 $.data.detail을 사용했습니다.");
             return new DetailNode(dataDetail, warnings);
         }
         JsonNode fallback = firstPolicyObject(root);
         if (fallback != null) {
-            warnings.add("?쇰컲 ?ㅽ궎留??먯깋 fallback?쇰줈 ?뺤콉 媛앹껜瑜??좏깮?덉뒿?덈떎.");
+            warnings.add("일반 스키마 탐색 fallback으로 정책 객체를 선택했습니다.");
         }
         return new DetailNode(fallback, warnings);
     }
@@ -218,11 +218,11 @@ public class YouthCenterResponseParser {
 
     private void assertHttpAndBody(ExternalApiResponse response, ResponseType type) {
         if (response.statusCode() >= 300 && response.statusCode() < 400) {
-            throw responseException("?⑦넻泥?뀈 API媛 HTTP " + response.statusCode() + " Redirect瑜?諛섑솚?덉뒿?덈떎. Location ?ㅻ뜑瑜??뺤씤?섏꽭??",
+            throw responseException("온통청년 API가 HTTP " + response.statusCode() + " Redirect를 반환했습니다. Location 헤더를 확인하세요.",
                     response, type, null, null);
         }
         if (response.statusCode() >= 400) {
-            throw responseException("?⑦넻泥?뀈 API媛 HTTP " + response.statusCode() + " ?ㅻ쪟瑜?諛섑솚?덉뒿?덈떎.",
+            throw responseException("온통청년 API가 HTTP " + response.statusCode() + " 오류를 반환했습니다.",
                     response, type, null, null);
         }
     }
@@ -231,7 +231,7 @@ public class YouthCenterResponseParser {
         try {
             return objectMapper.readTree(response.body());
         } catch (JsonProcessingException ex) {
-            throw responseException("JSON ?뚯떛 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.", response, ResponseType.JSON,
+            throw responseException("JSON 파싱 오류가 발생했습니다.", response, ResponseType.JSON,
                     null, ex.getOriginalMessage());
         }
     }
@@ -243,7 +243,7 @@ public class YouthCenterResponseParser {
             factory.setExpandEntityReferences(false);
             return factory.newDocumentBuilder().parse(new InputSource(new StringReader(response.body())));
         } catch (Exception ex) {
-            throw responseException("XML ?뚯떛 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.", response, ResponseType.XML, null, ex.getMessage());
+            throw responseException("XML 파싱 오류가 발생했습니다.", response, ResponseType.XML, null, ex.getMessage());
         }
     }
 

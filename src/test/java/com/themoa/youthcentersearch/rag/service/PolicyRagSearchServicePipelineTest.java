@@ -99,18 +99,21 @@ class PolicyRagSearchServicePipelineTest {
         when(targetAudienceClassifier.classify(org.mockito.ArgumentMatchers.<java.util.Collection<Integer>>any())).thenReturn(Map.of());
         PolicyEmploymentAudienceClassifier employmentAudienceClassifier = mock(PolicyEmploymentAudienceClassifier.class);
         when(employmentAudienceClassifier.classify(org.mockito.ArgumentMatchers.<java.util.Collection<Integer>>any())).thenReturn(Map.of());
-        return new PolicyRagSearchService(repository, vectorStoreProvider, properties,
-                new RegionMatchEvaluator(catalog, normalizer), lexical, new PolicySearchIntentBuilder(),
+        PolicySearchCandidateRetriever candidateRetriever = new PolicySearchCandidateRetriever(
+                repository, vectorStoreProvider, properties, lexical, null);
+        return new PolicyRagSearchService(repository, properties,
+                new RegionMatchEvaluator(catalog, normalizer), new PolicySearchIntentBuilder(),
                 new PolicyDomainClassifier(),
                 new PolicySearchPlanService(parser, new PolicyQueryClassifier(new PolicyKeywordNormalizer()),
                         domainIntentPolicy, educationStageDetector),
+                candidateRetriever,
+                new PolicySearchDiagnosticsFactory(),
                 domainIntentPolicy,
                 targetAudienceClassifier,
                 new PolicyTargetEligibilityFilter(),
                 employmentAudienceClassifier,
                 new UserEmploymentStatusDetector(),
                 educationStageDetector,
-                null,
                 new RegionCoverageResultSelector());
     }
 
