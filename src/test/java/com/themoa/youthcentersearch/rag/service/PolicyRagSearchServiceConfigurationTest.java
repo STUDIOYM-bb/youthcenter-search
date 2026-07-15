@@ -17,14 +17,26 @@ class PolicyRagSearchServiceConfigurationTest {
     void searchFailsClearlyWhenRagIsDisabled() {
         @SuppressWarnings("unchecked")
         ObjectProvider<VectorStore> vectorStoreProvider = mock(ObjectProvider.class);
+        SearchDomainIntentPolicy domainIntentPolicy = new SearchDomainIntentPolicy();
+        UserEducationStageDetector educationStageDetector = new UserEducationStageDetector();
         PolicyRagSearchService service = new PolicyRagSearchService(
-                mock(CompositePolicySearchConditionParser.class),
                 mock(PolicyRepository.class),
                 vectorStoreProvider,
                 new RagProperties(),
                 mock(RegionMatchEvaluator.class),
                 mock(PolicyLexicalSearchService.class),
-                mock(PolicySearchIntentBuilder.class));
+                mock(PolicySearchIntentBuilder.class),
+                new PolicyDomainClassifier(),
+                new PolicySearchPlanService(mock(CompositePolicySearchConditionParser.class),
+                        new PolicyQueryClassifier(new PolicyKeywordNormalizer()), domainIntentPolicy, educationStageDetector),
+                domainIntentPolicy,
+                mock(PolicyTargetAudienceClassifier.class),
+                new PolicyTargetEligibilityFilter(),
+                mock(PolicyEmploymentAudienceClassifier.class),
+                new UserEmploymentStatusDetector(),
+                educationStageDetector,
+                null,
+                new RegionCoverageResultSelector());
 
         assertThatThrownBy(() -> service.search(new PolicySearchRequest("청년 지원금", null)))
                 .isInstanceOf(YouthCenterApiException.class)

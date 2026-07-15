@@ -10,7 +10,6 @@ import org.w3c.dom.NodeList;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -55,9 +54,7 @@ public class ResponseSchemaAnalyzer {
         }
         if (node.isObject()) {
             objectPaths.add(path);
-            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> entry = fields.next();
+            for (Map.Entry<String, JsonNode> entry : node.properties()) {
                 String childPath = path + "." + entry.getKey();
                 String lower = entry.getKey().toLowerCase();
                 if (lower.contains("plcyno") || lower.contains("policyno")) numberCandidates.add(childPath);

@@ -1,6 +1,5 @@
 package com.themoa.youthcentersearch.rag.service;
 
-import com.themoa.youthcentersearch.policy.repository.PolicyRepository;
 import com.themoa.youthcentersearch.rag.dto.CandidateSource;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchCondition;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchIntent;
@@ -20,8 +19,7 @@ import java.util.Set;
 public class PolicyLexicalSearchService {
     private final PolicyLexicalIndexBuilder indexBuilder;
 
-    public PolicyLexicalSearchService(PolicyRepository policyRepository, PolicyKeywordNormalizer normalizer,
-                                      PolicyLexicalIndexBuilder indexBuilder) {
+    public PolicyLexicalSearchService(PolicyLexicalIndexBuilder indexBuilder) {
         this.indexBuilder = indexBuilder;
     }
 

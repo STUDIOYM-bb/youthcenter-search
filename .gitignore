@@ -26,6 +26,7 @@ out/
 !**/src/main/**/out/
 !**/src/test/**/out/
 __MACOSX/
+.DS_Store
 
 ### NetBeans ###
 /nbproject/private/
@@ -55,6 +56,7 @@ api-responses/
 build/
 .gradle/
 *.jar
+*.zip
 
 # Docker/local output
 out/

@@ -388,3 +388,14 @@ SGIS_REGION_SYNC_ON_STARTUP: false
 짧은 지역명은 DB 카탈로그의 공식명과 접미사 규칙으로 동적으로 만든다. 빈 문자열이나 한 글자 별칭은 만들지 않고, 복수 후보가 있으면 `AMBIGUOUS`로 남긴다.
 
 자세한 내용은 [REGION_CATALOG_SYNC.md](docs/REGION_CATALOG_SYNC.md)를 참고한다.
+
+## 소스 공유 ZIP 생성
+
+Finder나 IDE에서 프로젝트 전체를 직접 압축하지 말고 `scripts/package-project.sh`를 사용한다. 이 스크립트는 `build/`, `.git/`, `.gradle/`, `.idea/`, `.env`, `config/application-secret.yml`, `src/main/resources/application-secret.yml`, JAR/ZIP 산출물 등을 제외한다.
+
+```bash
+./scripts/package-project.sh
+./scripts/verify-no-secrets.sh build/youth-center-api-lab-share.zip
+```
+
+Windows 환경에서는 `scripts/verify-no-secrets.ps1`로 ZIP 안에 비밀 설정 파일이나 빌드 산출물이 포함되지 않았는지 확인한다.

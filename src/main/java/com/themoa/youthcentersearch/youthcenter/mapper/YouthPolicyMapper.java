@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.util.Iterator;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,9 +23,7 @@ public class YouthPolicyMapper {
     public YouthPolicyItem fromJson(JsonNode node) {
         Map<String, Object> fields = new LinkedHashMap<>();
         if (node != null && node.isObject()) {
-            Iterator<Map.Entry<String, JsonNode>> iterator = node.fields();
-            while (iterator.hasNext()) {
-                Map.Entry<String, JsonNode> entry = iterator.next();
+            for (Map.Entry<String, JsonNode> entry : node.properties()) {
                 fields.put(entry.getKey(), toPlainValue(entry.getValue()));
             }
         }

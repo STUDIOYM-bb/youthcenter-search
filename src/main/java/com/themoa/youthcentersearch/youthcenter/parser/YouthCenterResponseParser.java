@@ -399,9 +399,7 @@ public class YouthCenterResponseParser {
             return null;
         }
         if (node.isObject()) {
-            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> entry = fields.next();
+            for (Map.Entry<String, JsonNode> entry : node.properties()) {
                 if (entry.getKey().toLowerCase(Locale.ROOT).contains(hint) && entry.getValue().isValueNode()) {
                     return entry.getValue().asText();
                 }
