@@ -32,6 +32,8 @@ class PolicyPreferenceFilterTest {
                         Set.of(), Set.of("대학생"), Set.of("대학생"),
                         "수원", "EXACT", "SIGUNGU", Set.of(),
                         true, true, true, true, false, false, PolicySearchMode.HYBRID, 20),
+                Set.of(com.themoa.youthcentersearch.rag.dto.EducationStage.UNIVERSITY),
+                true,
                 true,
                 "TEST"
         );

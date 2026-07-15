@@ -59,6 +59,8 @@ class SearchDomainIntentPolicyTest {
                 new PolicySearchCondition(null, null, null, null, null, null, null, null,
                         Set.of(), Set.of(), Set.of(), null, null, null, Set.of(),
                         false, false, false, false, false, false, PolicySearchMode.HYBRID, 10),
+                Set.of(com.themoa.youthcentersearch.rag.dto.EducationStage.UNKNOWN),
+                false,
                 true,
                 "TEST"
         );

@@ -82,6 +82,10 @@ public record PolicySearchDiagnostics(
         boolean originalVectorUsed,
         int normalizedVectorCandidateCount,
         int excludedDomainFilteredCount,
+        String userEducationStages,
+        boolean educationStageExplicit,
+        int targetStageMismatchFilteredCount,
+        int targetStageUnknownCount,
         boolean semanticConflictDetected,
         String semanticConflictReason
 ) {

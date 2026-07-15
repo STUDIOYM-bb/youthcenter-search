@@ -62,6 +62,10 @@
             "Original Vector 사용": data.diagnostics && yesNo(data.diagnostics.originalVectorUsed),
             "Qdrant 정규화 후보": data.diagnostics && data.diagnostics.normalizedVectorCandidateCount,
             "제외 분야 제거": data.diagnostics && data.diagnostics.excludedDomainFilteredCount,
+            "사용자 교육 단계": data.diagnostics && data.diagnostics.userEducationStages,
+            "교육 단계 명시 여부": data.diagnostics && yesNo(data.diagnostics.educationStageExplicit),
+            "대상 단계 불일치 제외": data.diagnostics && data.diagnostics.targetStageMismatchFilteredCount,
+            "대상 단계 확인 필요": data.diagnostics && data.diagnostics.targetStageUnknownCount,
             "의도 분석 충돌": data.diagnostics && yesNo(data.diagnostics.semanticConflictDetected),
             "의도 분석 충돌 사유": data.diagnostics && data.diagnostics.semanticConflictReason,
             "Qdrant 후보 수": data.diagnostics && data.diagnostics.vectorCandidateCount,
@@ -120,6 +124,8 @@
                     <span>보조 정책 분야: ${safe((item.secondaryDomains || []).join(", "))}</span>
                     <span>지원 의도: ${safe((item.supportIntents || []).join(", "))}</span>
                     <span>제외 분야 통과: ${safe(item.excludedDomainPassed ? "통과" : "제외 대상")}</span>
+                    <span>정책 대상 교육 단계: ${safe((item.targetEducationStages || []).join(", "))}</span>
+                    <span>사용자 단계 일치: ${safe(item.targetStageMatchStatus)} - ${safe(item.targetStageMatchReason)}</span>
                     <span>정책 적용 지역: ${safe(item.region)}</span>
                     <span>지역 판정: ${safe(item.regionMatchLabel || item.regionMatchDescription)}</span>
                     <span>지역 일치 사유: ${safe(item.regionMatchReason || item.regionMatchDescription)}</span>
@@ -143,6 +149,8 @@
                 <ul class="reason-list">${listItems(item.candidateSources)}</ul>
                 <strong>분야 판정 근거</strong>
                 <ul class="reason-list">${listItems(item.domainEvidence)}</ul>
+                <strong>대상 단계 판정 근거</strong>
+                <ul class="reason-list">${listItems(item.targetEducationEvidence)}</ul>
                 <div class="button-row">
                     ${item.officialUrl ? `<a class="button-link" href="${escapeAttr(item.officialUrl)}" target="_blank" rel="noreferrer">공식 링크</a>` : ""}
                     <button type="button" class="secondary detail-button" data-id="${escapeAttr(item.policyId)}">상세보기</button>

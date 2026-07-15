@@ -28,13 +28,16 @@ public class PolicySearchPlanService {
     private final CompositePolicySearchConditionParser conditionParser;
     private final PolicyQueryClassifier queryClassifier;
     private final SearchDomainIntentPolicy domainIntentPolicy;
+    private final UserEducationStageDetector educationStageDetector;
 
     public PolicySearchPlanService(CompositePolicySearchConditionParser conditionParser,
                                    PolicyQueryClassifier queryClassifier,
-                                   SearchDomainIntentPolicy domainIntentPolicy) {
+                                   SearchDomainIntentPolicy domainIntentPolicy,
+                                   UserEducationStageDetector educationStageDetector) {
         this.conditionParser = conditionParser;
         this.queryClassifier = queryClassifier;
         this.domainIntentPolicy = domainIntentPolicy;
+        this.educationStageDetector = educationStageDetector;
     }
 
     /**
@@ -49,6 +52,7 @@ public class PolicySearchPlanService {
         Set<SearchDomain> desiredDomains = normalizeDesiredDomains(query, semantics);
         Set<SupportIntent> desiredSupportIntents = supportIntents(desiredDomains, semantics.positiveKeywords());
         Set<SupportIntent> excludedSupportIntents = supportIntents(semantics.excludedDomains(), semantics.excludedKeywords());
+        var educationStage = educationStageDetector.detect(query);
         String mode = parsed.parserMode()
                 + (parsed.fallback() ? ":fallback" : "")
                 + (parsed.fallbackReason() == null ? "" : ":" + parsed.fallbackReason());
@@ -63,6 +67,8 @@ public class PolicySearchPlanService {
                 semantics.positiveKeywords(),
                 semantics.excludedKeywords(),
                 condition,
+                educationStage.stages(),
+                educationStage.explicit(),
                 semantics.explicitExclusion(),
                 mode
         );

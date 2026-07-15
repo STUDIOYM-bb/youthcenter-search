@@ -20,6 +20,8 @@ public record PolicySearchPlan(
         Set<String> positiveTerms,
         Set<String> excludedTerms,
         PolicySearchCondition condition,
+        Set<EducationStage> userEducationStages,
+        boolean educationStageExplicit,
         boolean explicitExclusion,
         String analysisMode
 ) {
@@ -33,6 +35,9 @@ public record PolicySearchPlan(
         excludedSupportIntents = excludedSupportIntents == null ? Set.of() : Set.copyOf(excludedSupportIntents);
         positiveTerms = positiveTerms == null ? Set.of() : Set.copyOf(positiveTerms);
         excludedTerms = excludedTerms == null ? Set.of() : Set.copyOf(excludedTerms);
+        userEducationStages = userEducationStages == null || userEducationStages.isEmpty()
+                ? Set.of(EducationStage.UNKNOWN)
+                : Set.copyOf(userEducationStages);
         analysisMode = StringUtils.hasText(analysisMode) ? analysisMode.trim() : "UNKNOWN";
     }
 }

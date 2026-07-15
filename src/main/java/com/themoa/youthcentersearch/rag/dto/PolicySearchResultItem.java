@@ -41,6 +41,11 @@ public record PolicySearchResultItem(
         List<String> secondaryDomains,
         List<String> supportIntents,
         List<String> domainEvidence,
-        boolean excludedDomainPassed
+        boolean excludedDomainPassed,
+        List<String> targetEducationStages,
+        List<String> targetEducationExcludedStages,
+        List<String> targetEducationEvidence,
+        String targetStageMatchStatus,
+        String targetStageMatchReason
 ) {
 }

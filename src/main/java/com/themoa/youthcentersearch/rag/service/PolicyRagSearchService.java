@@ -26,7 +26,9 @@ import com.themoa.youthcentersearch.rag.dto.PolicyDomainClassification;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchRequest;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchResponse;
 import com.themoa.youthcentersearch.rag.dto.PolicySearchResultItem;
+import com.themoa.youthcentersearch.rag.dto.PolicyTargetAudienceClassification;
 import com.themoa.youthcentersearch.rag.dto.SearchQueryType;
+import com.themoa.youthcentersearch.rag.dto.TargetStageMatchResult;
 import com.themoa.youthcentersearch.rag.dto.TopicRelevanceScore;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -68,6 +70,8 @@ public class PolicyRagSearchService {
     private final PolicyDomainClassifier domainClassifier;
     private final PolicySearchPlanService planService;
     private final SearchDomainIntentPolicy domainIntentPolicy;
+    private final PolicyTargetAudienceClassifier targetAudienceClassifier;
+    private final PolicyTargetEligibilityFilter targetEligibilityFilter;
     private final RegionEligiblePolicyCandidateService regionEligiblePolicyCandidateService;
     private final RegionCoverageResultSelector regionCoverageResultSelector;
 
@@ -83,6 +87,8 @@ public class PolicyRagSearchService {
                                   PolicyDomainClassifier domainClassifier,
                                   PolicySearchPlanService planService,
                                   SearchDomainIntentPolicy domainIntentPolicy,
+                                  PolicyTargetAudienceClassifier targetAudienceClassifier,
+                                  PolicyTargetEligibilityFilter targetEligibilityFilter,
                                   RegionEligiblePolicyCandidateService regionEligiblePolicyCandidateService,
                                   RegionCoverageResultSelector regionCoverageResultSelector) {
         this.conditionParser = conditionParser;
@@ -96,6 +102,8 @@ public class PolicyRagSearchService {
         this.domainClassifier = domainClassifier;
         this.planService = planService;
         this.domainIntentPolicy = domainIntentPolicy;
+        this.targetAudienceClassifier = targetAudienceClassifier;
+        this.targetEligibilityFilter = targetEligibilityFilter;
         this.regionEligiblePolicyCandidateService = regionEligiblePolicyCandidateService;
         this.regionCoverageResultSelector = regionCoverageResultSelector;
     }
@@ -110,8 +118,11 @@ public class PolicyRagSearchService {
         this(conditionParser, policyRepository, vectorStoreProvider, properties, regionMatchEvaluator,
                 lexicalSearchService, intentBuilder, new PolicyQueryClassifier(new PolicyKeywordNormalizer()),
                 new PolicyDomainClassifier(),
-                new PolicySearchPlanService(conditionParser, new PolicyQueryClassifier(new PolicyKeywordNormalizer()), new SearchDomainIntentPolicy()),
+                new PolicySearchPlanService(conditionParser, new PolicyQueryClassifier(new PolicyKeywordNormalizer()),
+                        new SearchDomainIntentPolicy(), new UserEducationStageDetector()),
                 new SearchDomainIntentPolicy(),
+                null,
+                new PolicyTargetEligibilityFilter(),
                 null,
                 new RegionCoverageResultSelector());
     }
@@ -233,6 +244,9 @@ public class PolicyRagSearchService {
                     .add(CandidateSource.MYSQL_FALLBACK));
         }
 
+        Map<Integer, PolicyTargetAudienceClassification> targetAudienceByPolicyId = targetAudienceClassifier == null
+                ? Map.of()
+                : targetAudienceClassifier.classify(policies.stream().map(Policy::getId).toList());
         FilterCounters counters = new FilterCounters();
         List<PolicySearchResultItem> allResults = policies.stream()
                 .map(policy -> score(policy, condition, intent, userRegion,
@@ -240,7 +254,8 @@ public class PolicyRagSearchService {
                         lexicalScores.getOrDefault(policy.getId(), 0.0),
                         titleExactScores.getOrDefault(policy.getId(), 0.0),
                         candidateSources.getOrDefault(policy.getId(), Set.of()),
-                        counters, queryType, plan))
+                        counters, queryType, plan,
+                        targetAudienceByPolicyId.getOrDefault(policy.getId(), PolicyTargetAudienceClassification.unknown())))
                 .filter(item -> pass(item, condition, plan, counters))
                 .sorted(resultComparator(condition))
                 .toList();
@@ -339,6 +354,10 @@ public class PolicyRagSearchService {
                 vectorCandidatesBySource.containsKey(CandidateSource.VECTOR_ORIGINAL_QUERY),
                 vectorCandidatesBySource.getOrDefault(CandidateSource.VECTOR_NORMALIZED_QUERY, List.of()).size(),
                 counters.excludedDomainFiltered,
+                plan.userEducationStages().stream().map(Enum::name).sorted().collect(java.util.stream.Collectors.joining(", ")),
+                plan.educationStageExplicit(),
+                counters.targetFiltered,
+                counters.targetUnknownCount,
                 semanticConflictDetected(parsed),
                 semanticConflictReason(parsed)
         );
@@ -371,10 +390,14 @@ public class PolicyRagSearchService {
         ConditionMatchResult age = ageMatch(policy, condition);
         ConditionMatchResult employment = employmentMatch(policy, condition);
         ConditionMatchResult student = studentMatch(policy, condition);
+        TargetStageMatchResult targetStage = item == null ? explainTargetStage(query, policy) : null;
         double lexical = item == null ? 0.0 : item.topicScore();
         double title = item != null && (item.candidateSources().contains(CandidateSource.EXACT_TITLE.name())
                 || item.candidateSources().contains(CandidateSource.TITLE_PHRASE.name())) ? 1.0 : 0.0;
         String disposition = item != null ? "INCLUDED" : disposition(policy, condition, regionMatch, age, employment, student);
+        if (item == null && targetStage != null && targetStage.status() == ConditionMatchStatus.MISMATCH) {
+            disposition = "REMOVED_BY_TARGET_STAGE";
+        }
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("policyId", policy.getId());
@@ -394,6 +417,11 @@ public class PolicyRagSearchService {
         body.put("age", Map.of("status", age.status().name(), "reason", age.reason()));
         body.put("employment", Map.of("status", employment.status().name(), "reason", employment.reason()));
         body.put("student", Map.of("status", student.status().name(), "reason", student.reason()));
+        body.put("targetStage", item == null
+                ? Map.of("status", targetStage == null ? "UNKNOWN" : targetStage.status().name(),
+                "reason", targetStage == null ? "대상 단계 trace 없음" : targetStage.reason())
+                : Map.of("status", item.targetStageMatchStatus(), "reason", item.targetStageMatchReason(),
+                "policyStages", item.targetEducationStages(), "evidence", item.targetEducationEvidence()));
         body.put("topicRelevance", Map.of("status", item == null ? "UNKNOWN_OR_FILTERED" : "MATCH",
                 "score", item == null ? 0.0 : Math.round(item.topicScore() * 1000.0) / 10.0));
         body.put("finalDisposition", disposition);
@@ -402,6 +430,16 @@ public class PolicyRagSearchService {
         body.put("trace", item == null ? null : resultTrace(item, rank));
         body.put("diagnostics", response.diagnostics());
         return body;
+    }
+
+    private TargetStageMatchResult explainTargetStage(String query, Policy policy) {
+        if (targetAudienceClassifier == null) {
+            return TargetStageMatchResult.unknown("대상 단계 classifier가 구성되지 않았습니다.");
+        }
+        var userStage = new UserEducationStageDetector().detect(query);
+        var target = targetAudienceClassifier.classify(List.of(policy.getId()))
+                .getOrDefault(policy.getId(), PolicyTargetAudienceClassification.unknown());
+        return targetEligibilityFilter.match(userStage, target);
     }
 
     private PolicyCandidateTrace resultTrace(PolicySearchResultItem item, int rank) {
@@ -511,7 +549,8 @@ public class PolicyRagSearchService {
     private PolicySearchResultItem score(Policy policy, PolicySearchCondition condition, PolicySearchIntent intent,
                                          ResolvedUserRegion userRegion, double semanticScore, double lexicalScore,
                                          double titleExactScore, Set<CandidateSource> sources, FilterCounters counters,
-                                         SearchQueryType queryType, PolicySearchPlan plan) {
+                                         SearchQueryType queryType, PolicySearchPlan plan,
+                                         PolicyTargetAudienceClassification targetAudience) {
         List<String> matched = new ArrayList<>();
         List<String> needCheck = new ArrayList<>();
         double directTitleScore = directTitlePhraseScore(policy, condition, intent);
@@ -535,9 +574,13 @@ public class PolicyRagSearchService {
         ConditionMatchResult ageMatch = ageMatch(policy, condition);
         ConditionMatchResult employmentMatch = employmentMatch(policy, condition);
         ConditionMatchResult studentMatch = studentMatch(policy, condition);
+        TargetStageMatchResult targetStageMatch = targetEligibilityFilter.match(plan, targetAudience);
         applyCondition("나이", ageMatch, condition.ageExplicit(), matched, needCheck, counters);
         applyCondition("취업 상태", employmentMatch, condition.employmentExplicit(), matched, needCheck, counters);
         applyCondition("학생 상태", studentMatch, condition.studentExplicit(), matched, needCheck, counters);
+        if (plan.educationStageExplicit()) {
+            applyTargetStage(targetStageMatch, matched, needCheck, counters);
+        }
         double applicationScore = applicationScore(policy, matched);
         TopicRelevanceScore topicScore = topicRelevance(policy, condition, semanticScore, lexicalScore, titleExactScore);
         if (passesTopicThreshold(topicScore, titleExactScore, queryType)) {
@@ -571,7 +614,12 @@ public class PolicyRagSearchService {
                 domain.secondaryDomains().stream().map(Enum::name).sorted().toList(),
                 domain.supportIntents().stream().map(Enum::name).sorted().toList(),
                 domain.evidence(),
-                excludedDomainPassed);
+                excludedDomainPassed,
+                targetAudience.includedStages().stream().map(Enum::name).sorted().toList(),
+                targetAudience.excludedStages().stream().map(Enum::name).sorted().toList(),
+                targetAudience.evidence(),
+                targetStageMatch.status().name(),
+                targetStageMatch.reason());
     }
 
     private boolean pass(PolicySearchResultItem item, PolicySearchCondition condition, PolicySearchPlan plan,
@@ -602,6 +650,10 @@ public class PolicyRagSearchService {
         }
         if (condition.studentExplicit() && item.needCheckReasons().contains(STUDENT_NOT_MATCHED)) {
             counters.studentFiltered++;
+            return false;
+        }
+        if (item.needCheckReasons().contains("TARGET_STAGE_NOT_MATCHED")) {
+            counters.targetFiltered++;
             return false;
         }
         if (item.needCheckReasons().contains("TOPIC_NOT_RELEVANT")) {
@@ -732,6 +784,18 @@ public class PolicyRagSearchService {
             needCheck.add(EMPLOYMENT_NOT_MATCHED);
         } else if ("학생 상태".equals(label)) {
             needCheck.add(STUDENT_NOT_MATCHED);
+        }
+    }
+
+    private void applyTargetStage(TargetStageMatchResult result, List<String> matched,
+                                  List<String> needCheck, FilterCounters counters) {
+        if (result.status() == ConditionMatchStatus.MATCH) {
+            matched.add("대상 교육 단계 일치: " + result.reason());
+        } else if (result.status() == ConditionMatchStatus.MISMATCH) {
+            needCheck.add("TARGET_STAGE_NOT_MATCHED");
+        } else {
+            counters.targetUnknownCount++;
+            needCheck.add("대상 교육 단계 확인 필요: " + result.reason());
         }
     }
 
@@ -996,6 +1060,7 @@ public class PolicyRagSearchService {
         int employmentFiltered;
         int studentFiltered;
         int targetFiltered;
+        int targetUnknownCount;
         int applicationFiltered;
         int excludedDomainFiltered;
     }
