@@ -20,24 +20,24 @@ class PolicyRagSearchServiceConfigurationTest {
         SearchDomainIntentPolicy domainIntentPolicy = new SearchDomainIntentPolicy();
         UserEducationStageDetector educationStageDetector = new UserEducationStageDetector();
         RagProperties properties = new RagProperties();
+        PolicyDomainClassifier domainClassifier = new PolicyDomainClassifier();
+        RegionMatchEvaluator regionMatchEvaluator = mock(RegionMatchEvaluator.class);
+        PolicyTargetEligibilityFilter targetEligibilityFilter = new PolicyTargetEligibilityFilter();
         PolicyRagSearchService service = new PolicyRagSearchService(
-                mock(PolicyRepository.class),
                 properties,
-                mock(RegionMatchEvaluator.class),
-                mock(PolicySearchIntentBuilder.class),
-                new PolicyDomainClassifier(),
                 new PolicySearchPlanService(mock(CompositePolicySearchConditionParser.class),
                         new PolicyQueryClassifier(new PolicyKeywordNormalizer()), domainIntentPolicy, educationStageDetector),
                 new PolicySearchCandidateRetriever(mock(PolicyRepository.class), vectorStoreProvider, properties,
                         mock(PolicyLexicalSearchService.class), null),
+                new PolicyEligibilityEvaluator(properties, regionMatchEvaluator, targetEligibilityFilter),
+                new PolicyRankingService(properties, domainClassifier, domainIntentPolicy),
+                new PolicySearchResultAssembler(domainClassifier),
                 new PolicySearchDiagnosticsFactory(),
-                domainIntentPolicy,
-                mock(PolicyTargetAudienceClassifier.class),
-                new PolicyTargetEligibilityFilter(),
-                mock(PolicyEmploymentAudienceClassifier.class),
-                new UserEmploymentStatusDetector(),
-                educationStageDetector,
-                new RegionCoverageResultSelector());
+                new PolicySearchExplainService(domainClassifier),
+                new PolicySearchRuntimeSupport(mock(PolicyRepository.class), regionMatchEvaluator,
+                        mock(PolicySearchIntentBuilder.class), mock(PolicyTargetAudienceClassifier.class),
+                        mock(PolicyEmploymentAudienceClassifier.class), new UserEmploymentStatusDetector(),
+                        new RegionCoverageResultSelector()));
 
         assertThatThrownBy(() -> service.search(new PolicySearchRequest("청년 지원금", null)))
                 .isInstanceOf(YouthCenterApiException.class)

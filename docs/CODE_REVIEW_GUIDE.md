@@ -31,9 +31,9 @@
 
 ## 4. Eligibility 평가
 
-- 대표 클래스: 현재 `PolicyRagSearchService` 내부 score/pass, `PolicyTargetEligibilityFilter`, `PolicyEmploymentAudienceClassifier`
-- 입력: 정책, 검색 조건, 대상 분류 결과
-- 출력: match/unknown/mismatch reason과 hard filter 여부
+- 대표 클래스: `PolicyEligibilityEvaluator`, `PolicyTargetEligibilityFilter`, `PolicyEmploymentAudienceClassifier`
+- 입력: `PolicySearchExecutionContext`, `PolicyCandidateCollection`, 사용자 지역, 대상/취업 audience 분류 결과, 사용자 취업 상태
+- 출력: `PolicyEvaluationResult`, `PolicyEligibilityEvaluation`, match/unknown/mismatch reason과 hard filter 여부
 - DB 사용: 정책 relation 로딩 결과 사용
 - 외부 API 사용: 없음
 - 확인 값: regionCompatibility, ageMatchStatus, employmentMatchStatus, targetStageMatchStatus
@@ -51,9 +51,9 @@
 
 ## 6. Ranking
 
-- 대표 클래스: 현재 `PolicyRagSearchService` 내부 ranking 메서드
-- 입력: semanticScore, lexicalScore, titleExactScore, topic relevance, recommendation tier
-- 출력: finalScore와 정렬된 결과
+- 대표 클래스: `PolicyRankingService`
+- 입력: `PolicySearchExecutionContext`, `PolicyEvaluationResult`, `CandidateEvidence`
+- 출력: `PolicyRankingResult`, `PolicyRankingEvaluation`, finalScore와 finalRank가 확정된 후보
 - DB 사용: 없음
 - 외부 API 사용: 없음
 - 확인 값: title source, topicScore, finalScore, recommendationTier
@@ -61,12 +61,12 @@
 
 ## 7. Result 조립
 
-- 대표 클래스: 현재 `PolicyRagSearchService` 내부 result item 조립
-- 입력: Policy, domain classification, condition match, recommendation
+- 대표 클래스: `PolicySearchResultAssembler`
+- 입력: Policy, `CandidateEvidence`, `PolicyEligibilityEvaluation`, `PolicyRankingEvaluation`
 - 출력: 기존 `PolicySearchResultItem` JSON 필드
 - DB 사용: 없음
 - 외부 API 사용: 없음
-- 주의사항: API 필드명은 프론트와 연결되어 있으므로 변경하지 않는다. 긴 record 생성자는 단계적으로 assembler로 분리해야 한다.
+- 주의사항: API 필드명은 프론트와 연결되어 있으므로 변경하지 않는다. 48개 필드 위치 기반 생성은 `PolicySearchResultDraft`에 한정해 관리한다.
 
 ## 8. Diagnostics
 
@@ -76,16 +76,16 @@
 - DB 사용: 없음
 - 외부 API 사용: 없음
 - 확인 값: vector/mysql 후보 수, hard filter count, excludedDomainFiltered, userEmploymentStatus, educationStage
-- 주의사항: Diagnostics는 검색 후 재추론하지 않고 실행 중 실제로 쓴 metrics만 조립한다.
+- 주의사항: Diagnostics는 검색 후 재추론하지 않고 실행 중 실제로 쓴 metrics만 조립한다. `PolicySearchDiagnosticsBuilder`로 필드명을 드러내고 JSON 구조는 유지한다.
 
 ## 9. Explain
 
-- 대표 클래스: `PolicyRagSearchService.explain`
-- 입력: query, policyId 또는 sourcePolicyId
+- 대표 클래스: `PolicySearchExplainService`
+- 입력: `PolicySearchPlan`, Policy, `CandidateEvidence`, `PolicyEligibilityEvaluation`, `PolicyRankingEvaluation`
 - 출력: 후보 source, 조건 판정, topic/final score, disposition
-- DB 사용: `PolicyRepository`
-- 외부 API 사용: 내부적으로 동일 검색을 수행하므로 검색과 같은 외부 의존성을 가진다.
-- 주의사항: 최종 rank를 source rank처럼 표시하면 안 된다. 후보 수집 단계의 `CandidateSourceEvidence`를 Explain에 계속 연결해야 한다.
+- DB 사용: 없음. explain 대상 정책 조회는 `PolicyRagSearchService` 진입부에서 1회 수행한다.
+- 외부 API 사용: 없음. 검색 실행 과정에서 만들어진 evidence를 재사용한다.
+- 주의사항: 최종 rank를 source rank처럼 표시하면 안 된다. 후보 수집 단계의 `CandidateSourceEvidence`를 Explain에 계속 연결하고, 없는 source는 `used=false`, `rank=null`, `score=null`로 표시한다.
 
 ## 10. 관리자 Job
 

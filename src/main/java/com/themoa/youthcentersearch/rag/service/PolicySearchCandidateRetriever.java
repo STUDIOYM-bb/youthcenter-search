@@ -31,8 +31,14 @@ import java.util.Set;
 /**
  * 자연어 검색 후보를 수집하고 policyId 기준으로 병합한다.
  *
- * <p>Qdrant 벡터 후보, BM25 lexical 후보, 지역 적격 pool 후보를 같은 순서로 모은다.
+ * <p>PolicySearchPlanService 이후, PolicyEligibilityEvaluator 이전에 호출된다. 입력은 SearchPlan,
+ * SearchIntent, 사용자 지역, page/size이며 출력은 PolicyCandidateCollection과 CandidateEvidence다.</p>
+ *
+ * <p>DB는 후보 정책 batch 로딩과 지역 적격 pool 조회에 사용하고, 외부 시스템은 Qdrant VectorStore 검색에 사용한다.
  * 이 클래스는 후보 생성만 담당하며 지역/나이/취업/교육 단계 hard filter나 최종 랭킹은 수행하지 않는다.</p>
+ *
+ * <p>수정 시 sourceRank와 finalRank를 섞지 않아야 한다. source별 실제 rank/rawScore/normalizedScore는
+ * Explain에서 그대로 사용되므로 후보 수집 시점의 값을 CandidateSourceEvidence에 보존해야 한다.</p>
  */
 @Service
 public class PolicySearchCandidateRetriever {

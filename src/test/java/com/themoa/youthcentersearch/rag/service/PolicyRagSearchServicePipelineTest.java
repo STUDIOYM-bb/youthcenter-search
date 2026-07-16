@@ -101,20 +101,21 @@ class PolicyRagSearchServicePipelineTest {
         when(employmentAudienceClassifier.classify(org.mockito.ArgumentMatchers.<java.util.Collection<Integer>>any())).thenReturn(Map.of());
         PolicySearchCandidateRetriever candidateRetriever = new PolicySearchCandidateRetriever(
                 repository, vectorStoreProvider, properties, lexical, null);
-        return new PolicyRagSearchService(repository, properties,
-                new RegionMatchEvaluator(catalog, normalizer), new PolicySearchIntentBuilder(),
-                new PolicyDomainClassifier(),
+        RegionMatchEvaluator regionMatchEvaluator = new RegionMatchEvaluator(catalog, normalizer);
+        PolicyTargetEligibilityFilter targetEligibilityFilter = new PolicyTargetEligibilityFilter();
+        PolicyDomainClassifier domainClassifier = new PolicyDomainClassifier();
+        return new PolicyRagSearchService(properties,
                 new PolicySearchPlanService(parser, new PolicyQueryClassifier(new PolicyKeywordNormalizer()),
                         domainIntentPolicy, educationStageDetector),
                 candidateRetriever,
+                new PolicyEligibilityEvaluator(properties, regionMatchEvaluator, targetEligibilityFilter),
+                new PolicyRankingService(properties, domainClassifier, domainIntentPolicy),
+                new PolicySearchResultAssembler(domainClassifier),
                 new PolicySearchDiagnosticsFactory(),
-                domainIntentPolicy,
-                targetAudienceClassifier,
-                new PolicyTargetEligibilityFilter(),
-                employmentAudienceClassifier,
-                new UserEmploymentStatusDetector(),
-                educationStageDetector,
-                new RegionCoverageResultSelector());
+                new PolicySearchExplainService(domainClassifier),
+                new PolicySearchRuntimeSupport(repository, regionMatchEvaluator, new PolicySearchIntentBuilder(),
+                        targetAudienceClassifier, employmentAudienceClassifier, new UserEmploymentStatusDetector(),
+                        new RegionCoverageResultSelector()));
     }
 
     private PolicySearchCondition condition() {

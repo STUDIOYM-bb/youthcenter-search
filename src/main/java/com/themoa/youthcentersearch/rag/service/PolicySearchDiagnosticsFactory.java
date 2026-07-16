@@ -15,8 +15,12 @@ import java.util.List;
 /**
  * 검색 실행 중 수집한 metrics를 기존 Diagnostics 응답 DTO로 조립한다.
  *
- * <p>API 호환성을 위해 {@link PolicySearchDiagnostics} record 구조는 유지한다.
- * 대신 검색 서비스 본문에서 위치 기반 생성자를 직접 호출하지 않게 하여 필드 순서 실수를 줄인다.</p>
+ * <p>PolicySearchResultAssembler 이후, PolicySearchResponse 반환 직전에 호출된다. 입력은 SearchPlan,
+ * 후보 수집 metrics, 자격/랭킹 metrics, 지역 보장 선택 결과이며 출력은 기존 JSON 구조의
+ * PolicySearchDiagnostics다.</p>
+ *
+ * <p>DB 또는 외부 시스템을 호출하지 않는다. API 호환성을 위해 record 구조는 유지하되 builder로
+ * 필드명을 드러내며, 새 진단 필드를 추가할 때는 JSON 호환성과 builder 위치 검증 테스트를 함께 수정해야 한다.</p>
  */
 @Component
 public class PolicySearchDiagnosticsFactory {
@@ -44,104 +48,104 @@ public class PolicySearchDiagnosticsFactory {
                                           String userEmploymentEvidence,
                                           String userEmploymentSource) {
         PolicySearchCondition condition = plan.condition();
-        return new PolicySearchDiagnostics(
-                candidates.vectorCandidateCount(),
-                candidates.vectorOriginalCandidateCount(),
-                candidates.vectorIntentCandidateCount(),
-                candidates.vectorExpandedCandidateCount(),
-                candidates.vectorCategoryCandidateCount(),
-                candidates.lexicalCandidateCount(),
-                candidates.mysqlTitleCandidateCount(),
-                candidates.mysqlKeywordCandidateCount(),
-                candidates.mysqlSummaryCandidateCount(),
-                candidates.mysqlCategoryCandidateCount(),
-                candidates.loadedPolicyCount(),
-                candidates.duplicateCandidateCount(),
-                filters.nationwideCandidateCount,
-                filters.provinceMatchedCount,
-                filters.cityMatchedCount,
-                filters.districtMatchedCount,
-                filters.exactSigunguMatchedCount,
-                filters.exactSidoMatchedCount,
-                filters.parentSidoMatchedCount,
-                filters.nationwideMatchedCount,
-                filters.multipleRegionMatchedCount,
-                filters.regionUnknownCount,
-                filters.regionNotMatchedCount,
-                filters.regionHardFilteredCount,
-                semanticScoreCount,
-                candidates.loadedPolicyCount(),
-                filters.regionFiltered,
-                filters.topicThresholdPassedCount,
-                filters.topicThresholdFailedCount,
-                filters.topicFilteredCount,
-                filters.regionEligibleCount,
-                filters.regionIneligibleCount,
-                filters.ageMatchedCount,
-                filters.ageUnknownCount,
-                filters.ageMismatchedCount,
-                filters.employmentMatchedCount,
-                filters.employmentUnknownCount,
-                filters.employmentMismatchedCount,
-                filters.ageFiltered,
-                filters.employmentFiltered,
-                filters.studentFiltered,
-                filters.targetFiltered,
-                filters.applicationFiltered,
-                candidates.fallbackAddedCount(),
-                results.size(),
-                retried,
-                mysqlFallbackUsed,
-                condition.searchMode().name(),
-                condition.regionExplicit(),
-                condition.ageExplicit(),
-                condition.employmentExplicit(),
-                condition.studentExplicit(),
-                condition.regionExplicit(),
-                condition.ageExplicit(),
-                condition.employmentExplicit(),
-                condition.studentExplicit(),
-                String.join(", ", condition.keywords()),
-                String.join(", ", condition.expandedKeywords()),
-                fallbackReason,
-                elapsedMillis,
-                candidates.regionPoolTotal(),
-                candidates.regionPoolExactSigungu(),
-                candidates.regionPoolParentSido(),
-                candidates.regionPoolNationwide(),
-                candidates.regionPoolMultiple(),
-                filters.unknownExcludedCount,
-                filters.wrongRegionExcludedCount,
-                selection.exactSigunguSelectedCount(),
-                selection.parentSidoSelectedCount(),
-                selection.nationwideSelectedCount(),
-                0,
-                plan.normalizedGoal(),
-                plan.desiredDomains().stream().map(Enum::name).sorted().collect(java.util.stream.Collectors.joining(", ")),
-                plan.excludedDomains().stream().map(Enum::name).sorted().collect(java.util.stream.Collectors.joining(", ")),
-                String.join(", ", plan.positiveTerms()),
-                String.join(", ", plan.excludedTerms()),
-                plan.explicitExclusion(),
-                intent.semanticQuery(),
-                candidates.vectorOriginalCandidateCount() > 0,
-                candidates.vectorNormalizedCandidateCount(),
-                filters.excludedDomainFiltered,
-                plan.userEducationStages().stream().map(Enum::name).sorted().collect(java.util.stream.Collectors.joining(", ")),
-                plan.educationStageExplicit(),
-                filters.targetFiltered,
-                filters.targetUnknownCount,
-                userEmploymentStatus,
-                userEmploymentExplicit,
-                userEmploymentEvidence,
-                userEmploymentSource,
-                filters.employedMismatchFiltered,
-                filters.unemployedMismatchFiltered,
-                filters.primaryCandidateCount,
-                filters.needsConfirmationCandidateCount,
-                results.stream().anyMatch(item -> RecommendationTier.NEEDS_CONFIRMATION.name().equals(item.recommendationTier())),
-                semanticConflictDetected(parsed),
-                semanticConflictReason(parsed)
-        );
+        return PolicySearchDiagnosticsBuilder.builder()
+                .vectorCandidateCount(candidates.vectorCandidateCount())
+                .originalVectorCandidateCount(candidates.vectorOriginalCandidateCount())
+                .intentVectorCandidateCount(candidates.vectorIntentCandidateCount())
+                .expandedVectorCandidateCount(candidates.vectorExpandedCandidateCount())
+                .categoryVectorCandidateCount(candidates.vectorCategoryCandidateCount())
+                .lexicalCandidateCount(candidates.lexicalCandidateCount())
+                .mysqlTitleCandidateCount(candidates.mysqlTitleCandidateCount())
+                .mysqlKeywordCandidateCount(candidates.mysqlKeywordCandidateCount())
+                .mysqlSummaryCandidateCount(candidates.mysqlSummaryCandidateCount())
+                .mysqlCategoryCandidateCount(candidates.mysqlCategoryCandidateCount())
+                .mergedCandidateCount(candidates.loadedPolicyCount())
+                .duplicateCandidateCount(candidates.duplicateCandidateCount())
+                .nationwideCandidateCount(filters.nationwideCandidateCount)
+                .provinceMatchedCount(filters.provinceMatchedCount)
+                .cityMatchedCount(filters.cityMatchedCount)
+                .districtMatchedCount(filters.districtMatchedCount)
+                .exactSigunguMatchedCount(filters.exactSigunguMatchedCount)
+                .exactSidoMatchedCount(filters.exactSidoMatchedCount)
+                .parentSidoMatchedCount(filters.parentSidoMatchedCount)
+                .nationwideMatchedCount(filters.nationwideMatchedCount)
+                .multipleRegionMatchedCount(filters.multipleRegionMatchedCount)
+                .regionUnknownCount(filters.regionUnknownCount)
+                .regionNotMatchedCount(filters.regionNotMatchedCount)
+                .regionHardFilteredCount(filters.regionHardFilteredCount)
+                .similarityPassedCount(semanticScoreCount)
+                .databaseLoadedCount(candidates.loadedPolicyCount())
+                .regionFilteredCount(filters.regionFiltered)
+                .topicThresholdPassedCount(filters.topicThresholdPassedCount)
+                .topicThresholdFailedCount(filters.topicThresholdFailedCount)
+                .topicFilteredCount(filters.topicFilteredCount)
+                .regionEligibleCount(filters.regionEligibleCount)
+                .regionIneligibleCount(filters.regionIneligibleCount)
+                .ageMatchedCount(filters.ageMatchedCount)
+                .ageUnknownCount(filters.ageUnknownCount)
+                .ageMismatchedCount(filters.ageMismatchedCount)
+                .employmentMatchedCount(filters.employmentMatchedCount)
+                .employmentUnknownCount(filters.employmentUnknownCount)
+                .employmentMismatchedCount(filters.employmentMismatchedCount)
+                .ageFilteredCount(filters.ageFiltered)
+                .employmentFilteredCount(filters.employmentFiltered)
+                .studentFilteredCount(filters.studentFiltered)
+                .targetFilteredCount(filters.targetFiltered)
+                .applicationFilteredCount(filters.applicationFiltered)
+                .mysqlFallbackCount(candidates.fallbackAddedCount())
+                .finalResultCount(results.size())
+                .retriedWithLargerTopK(retried)
+                .mysqlFallbackUsed(mysqlFallbackUsed)
+                .searchMode(condition.searchMode().name())
+                .regionExplicit(condition.regionExplicit())
+                .ageExplicit(condition.ageExplicit())
+                .employmentExplicit(condition.employmentExplicit())
+                .studentExplicit(condition.studentExplicit())
+                .regionFilterApplied(condition.regionExplicit())
+                .ageFilterApplied(condition.ageExplicit())
+                .employmentFilterApplied(condition.employmentExplicit())
+                .studentFilterApplied(condition.studentExplicit())
+                .coreKeywords(String.join(", ", condition.keywords()))
+                .expandedKeywords(String.join(", ", condition.expandedKeywords()))
+                .fallbackReason(fallbackReason)
+                .elapsedTimeMs(elapsedMillis)
+                .regionEligiblePoolCount(candidates.regionPoolTotal())
+                .exactSigunguPoolCount(candidates.regionPoolExactSigungu())
+                .parentSidoPoolCount(candidates.regionPoolParentSido())
+                .nationwidePoolCount(candidates.regionPoolNationwide())
+                .multipleRegionPoolCount(candidates.regionPoolMultiple())
+                .unknownExcludedCount(filters.unknownExcludedCount)
+                .wrongRegionExcludedCount(filters.wrongRegionExcludedCount)
+                .exactSigunguSelectedCount(selection.exactSigunguSelectedCount())
+                .parentSidoSelectedCount(selection.parentSidoSelectedCount())
+                .nationwideSelectedCount(selection.nationwideSelectedCount())
+                .unknownReviewResultCount(0)
+                .normalizedGoal(plan.normalizedGoal())
+                .desiredDomains(plan.desiredDomains().stream().map(Enum::name).sorted().collect(java.util.stream.Collectors.joining(", ")))
+                .excludedDomains(plan.excludedDomains().stream().map(Enum::name).sorted().collect(java.util.stream.Collectors.joining(", ")))
+                .positiveKeywords(String.join(", ", plan.positiveTerms()))
+                .excludedKeywords(String.join(", ", plan.excludedTerms()))
+                .explicitExclusion(plan.explicitExclusion())
+                .semanticQuery(intent.semanticQuery())
+                .originalVectorUsed(candidates.vectorOriginalCandidateCount() > 0)
+                .normalizedVectorCandidateCount(candidates.vectorNormalizedCandidateCount())
+                .excludedDomainFilteredCount(filters.excludedDomainFiltered)
+                .userEducationStages(plan.userEducationStages().stream().map(Enum::name).sorted().collect(java.util.stream.Collectors.joining(", ")))
+                .educationStageExplicit(plan.educationStageExplicit())
+                .targetStageMismatchFilteredCount(filters.targetFiltered)
+                .targetStageUnknownCount(filters.targetUnknownCount)
+                .userEmploymentStatus(userEmploymentStatus)
+                .userEmploymentExplicit(userEmploymentExplicit)
+                .userEmploymentEvidence(userEmploymentEvidence)
+                .userEmploymentAnalysisSource(userEmploymentSource)
+                .employedMismatchFilteredCount(filters.employedMismatchFiltered)
+                .unemployedMismatchFilteredCount(filters.unemployedMismatchFiltered)
+                .primaryCandidateCount(filters.primaryCandidateCount)
+                .needsConfirmationCandidateCount(filters.needsConfirmationCandidateCount)
+                .needsConfirmationUsed(results.stream().anyMatch(item -> RecommendationTier.NEEDS_CONFIRMATION.name().equals(item.recommendationTier())))
+                .semanticConflictDetected(semanticConflictDetected(parsed))
+                .semanticConflictReason(semanticConflictReason(parsed))
+                .build();
     }
 
     private boolean semanticConflictDetected(PolicySearchConditionParser.ParsedPolicySearchCondition parsed) {

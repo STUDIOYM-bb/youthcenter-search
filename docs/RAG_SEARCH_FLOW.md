@@ -4,13 +4,14 @@
 
 1. `/api/policies/search` 요청이 `PolicyRagSearchService`로 들어온다.
 2. `PolicySearchPlanService`가 OpenAI/Rule 결과를 합쳐 `PolicySearchPlan`을 만든다.
-3. `PolicySearchIntentBuilder`가 vector/lexical 질의에 사용할 긍정 의도 문장을 만든다.
+3. `PolicySearchRuntimeSupport`가 `PolicySearchIntentBuilder`를 통해 vector/lexical 질의에 사용할 긍정 의도 문장을 만든다.
 4. `PolicySearchCandidateRetriever`가 Qdrant, BM25 lexical, 지역 적격 pool 후보를 수집하고 policyId 기준으로 병합한다.
-5. 정책 relation을 로딩한 뒤 지역, 나이, 취업 상태, 학생 Boolean, 교육 단계, 신청 상태를 hard filter로 평가한다.
-6. `PolicyDomainClassifier`와 `SearchDomainIntentPolicy`가 제외 domain/support intent를 적용한다.
-7. 제목 정확도, semantic score, lexical score, topic relevance, recommendation tier로 정렬한다.
-8. `RegionCoverageResultSelector`가 첫 페이지 지역 보장을 적용하고, 그 순서를 전체 결과 순서로 확정한 뒤 pagination한다.
+5. `PolicyEligibilityEvaluator`가 지역, 나이, 취업 상태, 학생 Boolean, 교육 단계, 신청 상태를 hard filter로 평가한다.
+6. `PolicyRankingService`가 topic/domain/support intent 관련도와 제목 정확도, semantic score, lexical score, recommendation tier로 정렬한다.
+7. `PolicySearchResultAssembler`가 내부 평가 결과를 기존 `PolicySearchResultItem` JSON으로 변환한다.
+8. `PolicySearchRuntimeSupport`가 `RegionCoverageResultSelector`를 호출해 첫 페이지 지역 보장을 적용하고 pagination한다.
 9. `PolicySearchDiagnosticsFactory`가 실행 중 수집된 metrics를 기존 Diagnostics JSON으로 조립한다.
+10. `PolicyRagSearchService`가 `PolicySearchResponse`를 반환한다.
 
 ## SearchPlan
 
@@ -39,7 +40,14 @@
 
 각 후보는 `CandidateEvidence`와 `CandidateSourceEvidence`를 가진다. 최종 순위와 source별 rank는 다르므로 별도로 보존한다.
 
-## Hard Filter
+## Eligibility
+
+담당 클래스: `PolicyEligibilityEvaluator`
+
+- 입력: `PolicySearchExecutionContext`, `PolicyCandidateCollection`, 사용자 지역, 대상/취업 audience 분류, 사용자 취업 상태
+- 출력: `PolicyEvaluationResult`, `EvaluatedPolicyCandidate`, `PolicyEligibilityEvaluation`, `PolicySearchFilterMetrics`
+- DB 조회: 없음. 후보 수집 단계에서 batch 로딩된 정책 relation만 사용한다.
+- 외부 API 호출: 없음.
 
 명확한 자격 불일치는 감점하지 않고 제거한다.
 
@@ -55,7 +63,7 @@
 
 ## Preference Filter
 
-사용자가 제외한 domain/support intent는 `SearchDomainIntentPolicy`가 검사한다.
+사용자가 제외한 domain/support intent는 `PolicyRankingService`가 `PolicyDomainClassifier`와 `SearchDomainIntentPolicy`를 사용해 검사한다.
 
 EMPLOYMENT 제외 검색에서는 다음 정책을 제거한다.
 
@@ -67,6 +75,13 @@ EMPLOYMENT 제외 검색에서는 다음 정책을 제거한다.
 
 ## Ranking
 
+담당 클래스: `PolicyRankingService`
+
+- 입력: `PolicySearchExecutionContext`, `PolicyEvaluationResult`
+- 출력: `PolicyRankingResult`, `RankedPolicyCandidate`, `PolicyRankingEvaluation`
+- DB 조회: 없음.
+- 외부 API 호출: 없음.
+
 정렬은 기존 점수 공식을 유지한다.
 
 - `POLICY_NAME`: Exact title 우선
@@ -75,7 +90,25 @@ EMPLOYMENT 제외 검색에서는 다음 정책을 제거한다.
 
 지원 형태 가중치는 실제 support 점수 없이 분모에만 들어가면 점수를 낮출 수 있으므로 현재 공식에서는 사용하지 않는다.
 
+## Result 조립
+
+담당 클래스: `PolicySearchResultAssembler`
+
+- 입력: `Policy`, `CandidateEvidence`, `PolicyEligibilityEvaluation`, `PolicyRankingEvaluation`
+- 출력: 기존 `PolicySearchResultItem`
+- DB 조회: 없음.
+- 외부 API 호출: 없음.
+
+API JSON 필드명과 null 처리 방식은 프론트 호환성 때문에 유지한다. 긴 record 생성자 호출은 `PolicySearchResultDraft`를 거쳐 조립한다.
+
 ## Diagnostics
+
+담당 클래스: `PolicySearchDiagnosticsFactory`
+
+- 입력: plan, intent, candidate metrics, filter/ranking metrics, selection metrics, elapsed time
+- 출력: 기존 `PolicySearchDiagnostics`
+- DB 조회: 없음.
+- 외부 API 호출: 없음.
 
 `PolicySearchDiagnosticsFactory`는 다음 값을 재계산하지 않고 실행 중 수집된 metrics에서 조립한다.
 
@@ -93,11 +126,19 @@ EMPLOYMENT 제외 검색에서는 다음 정책을 제거한다.
 
 ## Explain
 
-Explain은 현재 검색을 동일하게 실행한 뒤 특정 정책이 결과에 포함됐는지 확인한다.
+담당 클래스: `PolicySearchExplainService`
+
+- 입력: `PolicySearchPlan`, `Policy`, `CandidateEvidence`, `PolicyEligibilityEvaluation`, `PolicyRankingEvaluation`
+- 출력: 기존 API와 호환되는 `Map<String, Object>`
+- DB 조회: 없음. `PolicyRagSearchService`가 explain 대상 정책을 1회 조회한다.
+- 외부 API 호출: 없음. 검색 실행에서 만들어진 evidence를 재사용한다.
+
+Explain은 현재 검색 실행에서 만들어진 후보 증거와 평가 결과로 특정 정책이 결과에 포함됐는지 설명한다.
 
 - 포함된 경우 결과 item의 실제 score와 condition match를 반환한다.
 - 제외된 경우 지역/나이/취업/학생/교육 단계 기준으로 disposition을 계산한다.
 - 후보 source별 rank/score는 `CandidateSourceEvidence`를 계속 연결해야 하며, 최종 rank를 vector rank처럼 표시하면 안 된다.
+- 특정 vector source가 없으면 `used=false`, `rank=null`, `score=null`로 표시한다.
 
 ## 재색인·재임베딩
 
